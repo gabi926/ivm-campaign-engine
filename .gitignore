@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local dev server logs (created by PowerShell Start-Process)
+.devserver.*
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, ChangeEvent } from "react";
 import {
   Copy,
@@ -23,6 +24,8 @@ import {
   Radio,
   Users,
   Search,
+  Download,
+  ClipboardCopy,
 } from "lucide-react";
 
 const PAID = ["Meta", "Google", "TikTok", "YouTube", "LinkedIn", "Programmatic"] as const;
@@ -64,6 +67,354 @@ import type {
   LpCategoryScore,
 } from "./_lib/campaign-types";
 
+function buildMarkdown(clientName: string, channels: string[], o: CampaignOutput): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const lines: string[] = [];
+  const push = (s = "") => lines.push(s);
+  const hr = () => push("\n---\n");
+
+  push(`# ${clientName} — Campaign Brief`);
+  push(`_Generated ${date} · Channels: ${channels.join(" · ") || "—"}_`);
+  hr();
+
+  if (o.big_idea) {
+    push(`## Big Idea`);
+    if (o.big_idea.claim) push(`**${o.big_idea.claim}**`);
+    if (o.big_idea.why_it_works) {
+      push();
+      push(`_Why:_ ${o.big_idea.why_it_works}`);
+    }
+    if (o.big_idea.supporting_proof?.length) {
+      push();
+      push(`**Supporting proof:**`);
+      o.big_idea.supporting_proof.forEach((p) => push(`- ${p}`));
+    }
+    hr();
+  }
+
+  if (o.audit_input_error) {
+    push(`## Landing Page Audit`);
+    push(`> ⚠ Audit skipped: ${o.audit_input_error}`);
+    hr();
+  } else if (o.landing_page_audit) {
+    const a = o.landing_page_audit;
+    push(`## Landing Page Audit`);
+    push(`**Overall:** ${a.overall_score ?? "—"}/100`);
+    if (a.url_audited) push(`**URL audited:** ${a.url_audited}`);
+    if (a.big_idea_alignment) {
+      push();
+      push(`**Big Idea alignment:** ${a.big_idea_alignment.verdict ?? "—"} (${a.big_idea_alignment.score ?? "—"}/10)`);
+      if (a.big_idea_alignment.what_lp_says) push(`- LP says: ${a.big_idea_alignment.what_lp_says}`);
+      if (a.big_idea_alignment.what_campaign_promises)
+        push(`- Campaign promises: ${a.big_idea_alignment.what_campaign_promises}`);
+      if (a.big_idea_alignment.gap_analysis) push(`- **Gap:** ${a.big_idea_alignment.gap_analysis}`);
+    }
+    if (a.five_second_test) {
+      push();
+      push(`**5-second test:** ${a.five_second_test.verdict ?? "—"}`);
+      if (a.five_second_test.what_user_understands)
+        push(`> "${a.five_second_test.what_user_understands}"`);
+    }
+    if (a.top_3_priority_fixes?.length) {
+      push();
+      push(`### Top 3 priority fixes`);
+      a.top_3_priority_fixes.forEach((f) => {
+        push(`${f.rank ?? "•"}. **${f.fix ?? "—"}**`);
+        if (f.why) push(`   - Why: ${f.why}`);
+        if (f.implementation) push(`   - How: ${f.implementation}`);
+      });
+    }
+    if (a.category_scores) {
+      push();
+      push(`### Category scores`);
+      push(`| Category | Score | Issues | Fixes |`);
+      push(`|---|---|---|---|`);
+      const cats: { label: string; data?: LpCategoryScore }[] = [
+        { label: "Above-fold clarity", data: a.category_scores.above_fold_clarity },
+        { label: "Hero match", data: a.category_scores.hero_match },
+        { label: "Social proof", data: a.category_scores.social_proof },
+        { label: "Offer clarity", data: a.category_scores.offer_clarity },
+        { label: "CTA strength", data: a.category_scores.cta_strength },
+        { label: "Trust signals", data: a.category_scores.trust_signals },
+        { label: "Friction audit", data: a.category_scores.friction_audit },
+        { label: "Mobile considerations", data: a.category_scores.mobile_considerations },
+      ];
+      cats.forEach(({ label, data }) => {
+        const escape = (s: string) => s.replace(/\|/g, "\\|").replace(/\n/g, " ");
+        const issues = (data?.issues || []).map(escape).join("; ") || "—";
+        const fixes = (data?.fixes || []).map(escape).join("; ") || "—";
+        push(`| ${label} | ${data?.score ?? "—"}/10 | ${issues} | ${fixes} |`);
+      });
+    }
+    if (a.conversion_blockers?.length) {
+      push();
+      push(`### Conversion blockers`);
+      a.conversion_blockers.forEach((b) => push(`- ${b}`));
+    }
+    if (a.what_is_working?.length) {
+      push();
+      push(`### What's working`);
+      a.what_is_working.forEach((w) => push(`- ${w}`));
+    }
+    if (a.page_performance_note) {
+      push();
+      push(`> _${a.page_performance_note}_`);
+    }
+    hr();
+  }
+
+  if (o.competitor_intel?.length) {
+    push(`## Competitor Intel`);
+    o.competitor_intel.forEach((c, i) => {
+      push();
+      push(`### ${i + 1}. ${c.competitor || "—"}`);
+      if (c.positioning) push(`**Positioning:** ${c.positioning}`);
+      if (c.primary_hooks?.length) push(`**Hooks:** ${c.primary_hooks.join(" | ")}`);
+      if (c.offer_structure) push(`**Offer:** ${c.offer_structure}`);
+      if (c.creative_patterns) push(`**Creative:** ${c.creative_patterns}`);
+      if (c.gaps_to_exploit) push(`**Gap to exploit:** ${c.gaps_to_exploit}`);
+    });
+    hr();
+  }
+
+  if (o.copy_variations?.length) {
+    push(`## Copy Angles`);
+    o.copy_variations.forEach((c, i) => {
+      const meta = [c.angle, c.lead_type && `${c.lead_type} Lead`, c.awareness_level, c.traffic_temp]
+        .filter(Boolean)
+        .join(" · ");
+      push();
+      push(`### Copy ${String(i + 1).padStart(2, "0")} — ${meta || "—"} · V.E. ${c.value_equation_score ?? "—"}/10`);
+      if (c.headline) push(`**${c.headline}**`);
+      if (c.primary_text) push(c.primary_text);
+      if (c.value_equation_reasoning) push(`_${c.value_equation_reasoning}_`);
+      if (c.best_for) push(`Best for: ${c.best_for}`);
+    });
+    hr();
+  }
+
+  if (o.cta_variations?.length) {
+    push(`## CTA Stack`);
+    o.cta_variations.forEach((c, i) => {
+      push(`${i + 1}. **${c.text || "—"}** [${c.framework || "—"}] — ${c.trigger || ""}`);
+    });
+    hr();
+  }
+
+  if (o.search_ads?.length) {
+    push(`## Search Ads`);
+    o.search_ads.forEach((s, i) => {
+      push();
+      push(`### Search Ad ${String(i + 1).padStart(2, "0")}`);
+      push(`- ${[s.headline_1, s.headline_2, s.headline_3].filter(Boolean).join(" | ")}`);
+      if (s.description) push(`- ${s.description}`);
+      if (s.intent_match) push(`- Intent: ${s.intent_match}`);
+      if (s.sitelinks?.length) push(`- Sitelinks: ${s.sitelinks.join(", ")}`);
+    });
+    hr();
+  }
+
+  if (o.programmatic_creative) {
+    push(`## Programmatic Creative`);
+    if (o.programmatic_creative.banner_concepts?.length) {
+      push();
+      push(`### Banners`);
+      o.programmatic_creative.banner_concepts.forEach((b, i) => {
+        push(`${i + 1}. **${b.size || "—"}** — ${b.headline || ""} / ${b.subhead || ""}`);
+        if (b.cta_button) push(`   - CTA: ${b.cta_button}`);
+        if (b.visual_direction) push(`   - Visual: ${b.visual_direction}`);
+      });
+    }
+    if (o.programmatic_creative.native_ads?.length) {
+      push();
+      push(`### Native Ads`);
+      o.programmatic_creative.native_ads.forEach((n, i) => {
+        push(`${i + 1}. **${n.headline || "—"}** — ${n.description || ""}`);
+        if (n.image_direction) push(`   - Image: ${n.image_direction}`);
+      });
+    }
+    hr();
+  }
+
+  if (o.email_sequence?.length) {
+    push(`## Email Sequence`);
+    o.email_sequence.forEach((e) => {
+      push();
+      push(`### ${e.position || "Email"}`);
+      if (e.subject) push(`**Subject:** ${e.subject}`);
+      if (e.preview_text) push(`**Preview:** ${e.preview_text}`);
+      if (e.send_timing) push(`**Send timing:** ${e.send_timing}`);
+      if (e.body) {
+        push();
+        push("```");
+        push(e.body);
+        push("```");
+      }
+      if (e.cta) push(`**CTA:** ${e.cta}`);
+    });
+    hr();
+  }
+
+  if (o.newsletter_issues?.length) {
+    push(`## Newsletter Issues`);
+    o.newsletter_issues.forEach((n, i) => {
+      push();
+      push(`### Issue ${String(i + 1).padStart(2, "0")}`);
+      if (n.subject) push(`**Subject:** ${n.subject}`);
+      if (n.preview_text) push(`**Preview:** ${n.preview_text}`);
+      if (n.hook) push(`**Hook:** _${n.hook}_`);
+      if (n.body) {
+        push();
+        push(n.body);
+      }
+      if (n.soft_cta) push(`_${n.soft_cta}_`);
+    });
+    hr();
+  }
+
+  if (o.sms_messages?.length) {
+    push(`## SMS Messages`);
+    o.sms_messages.forEach((s, i) => {
+      push(`${i + 1}. [${s.use_case || "—"}] ${s.message || ""}`);
+      if (s.compliance_note) push(`   - Compliance: ${s.compliance_note}`);
+    });
+    hr();
+  }
+
+  if (o.organic_strategy) {
+    const og = o.organic_strategy;
+    push(`## Organic Social Strategy`);
+    if (og.content_pillars?.length) {
+      push();
+      push(`### Pillars`);
+      og.content_pillars.forEach((p, i) => {
+        push(`${i + 1}. **${p.pillar || "—"}** — ${p.purpose || ""} (${(p.content_types || []).join(", ")})`);
+      });
+    }
+    if (og.post_hooks?.length) {
+      push();
+      push(`### Hooks`);
+      og.post_hooks.forEach((h, i) => {
+        push(`${i + 1}. [${h.framework || "—"}] ${h.hook || ""} _(pillar: ${h.pillar_match || "—"})_`);
+      });
+    }
+    if (og.caption_templates?.length) {
+      push();
+      push(`### Caption templates`);
+      og.caption_templates.forEach((c) => {
+        push();
+        push(`**${c.style || "—"}:**`);
+        push("```");
+        push(c.template || "");
+        push("```");
+      });
+    }
+    if (og.posting_cadence) {
+      push();
+      push(`**Cadence:** ${og.posting_cadence}`);
+    }
+    if (og.link_in_bio_strategy) push(`**Link-in-bio:** ${og.link_in_bio_strategy}`);
+    if (og.soft_ctas?.length) push(`**Soft CTAs:** ${og.soft_ctas.join(" | ")}`);
+    hr();
+  }
+
+  if (o.image_concepts?.length) {
+    push(`## Image Concepts`);
+    o.image_concepts.forEach((img, i) => {
+      push();
+      push(`### Concept ${String(i + 1).padStart(2, "0")} — ${img.concept || "—"}`);
+      if (img.scroll_stop_principle) push(`_Scroll-stop:_ ${img.scroll_stop_principle}`);
+      if (img.ai_prompt) {
+        push();
+        push("```");
+        push(img.ai_prompt);
+        push("```");
+      }
+      if (img.placement) push(`Placement: ${img.placement}`);
+    });
+    hr();
+  }
+
+  if (o.video_concepts?.length) {
+    push(`## Video Concepts`);
+    o.video_concepts.forEach((v, i) => {
+      push();
+      push(`### Video ${String(i + 1).padStart(2, "0")} — ${v.style || "—"} · ${v.duration || "—"} [${v.hook_framework || "—"}]`);
+      if (v.hook) push(`**Hook:** "${v.hook}"`);
+      if (v.script) {
+        push();
+        push("**Script:**");
+        push("```");
+        push(v.script);
+        push("```");
+      }
+      if (v.platform_fit) push(`Platform fit: ${v.platform_fit}`);
+    });
+    hr();
+  }
+
+  if (o.form_suggestions) {
+    push(`## Form Build`);
+    if (o.form_suggestions.fields?.length) {
+      push();
+      push(`### Fields`);
+      o.form_suggestions.fields.forEach((f) => {
+        push(`- ${f.label || "—"} (${f.type || "?"})${f.required ? " *" : ""}`);
+      });
+    }
+    if (o.form_suggestions.qualifying_questions?.length) {
+      push();
+      push(`### Qualifying questions`);
+      o.form_suggestions.qualifying_questions.forEach((q, i) => push(`${i + 1}. ${q}`));
+    }
+    hr();
+  }
+
+  if (o.landing_page_structure?.length) {
+    push(`## Landing Page Structure`);
+    o.landing_page_structure.forEach((s, i) => {
+      push();
+      push(`**${String(i + 1).padStart(2, "0")}. ${s.section || "—"}**`);
+      if (s.purpose) push(`_${s.purpose}_`);
+      if (s.copy_direction) push(s.copy_direction);
+    });
+    hr();
+  }
+
+  if (o.compliance_notes) {
+    push(`## Compliance Watch`);
+    if (o.compliance_notes.general_flags?.length) {
+      push();
+      push(`**General:**`);
+      o.compliance_notes.general_flags.forEach((f) => push(`- ${f}`));
+    }
+    if (o.compliance_notes.platform_specific) {
+      Object.entries(o.compliance_notes.platform_specific).forEach(([platform, flags]) => {
+        if (flags?.length) {
+          push();
+          push(`**${platform}:**`);
+          flags.forEach((f) => push(`- ${f}`));
+        }
+      });
+    }
+    hr();
+  }
+
+  if (o.weakness_audit?.length) {
+    push(`## Weakness Audit`);
+    o.weakness_audit.forEach((w, i) => {
+      push();
+      push(`${i + 1}. **${w.asset_reference || "—"}**`);
+      if (w.weakness) push(`   - Weakness: ${w.weakness}`);
+      if (w.fix) push(`   - **Fix:** ${w.fix}`);
+    });
+    hr();
+  }
+
+  push(`_Generated by IVM Campaign Engine · go-ivm.com_`);
+
+  return lines.join("\n");
+}
 
 export default function IVMCampaignEngine() {
   const [inputs, setInputs] = useState<CampaignInputs>({
@@ -82,6 +433,10 @@ export default function IVMCampaignEngine() {
   const [output, setOutput] = useState<CampaignOutput | null>(null);
   const [error, setError] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
+  const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
+  const [markdownCopied, setMarkdownCopied] = useState(false);
+  const [markdownCopying, setMarkdownCopying] = useState(false);
 
   const toggleChannel = (c: ChannelName) => {
     setInputs((prev) => ({
@@ -149,6 +504,64 @@ export default function IVMCampaignEngine() {
   const reset = () => {
     setOutput(null);
     setError("");
+    setPdfError("");
+  };
+
+  const downloadPdf = async () => {
+    if (!output) return;
+    setPdfDownloading(true);
+    setPdfError("");
+    try {
+      const res = await fetch("/api/download-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientName: inputs.clientName.trim() || "Untitled",
+          channels: inputs.channels,
+          output,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const msg =
+          (data && typeof data === "object" && "error" in data && (data as { error?: string }).error) ||
+          `PDF generation failed (${res.status})`;
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get("content-disposition") || "";
+      const filenameMatch = disp.match(/filename="?([^"]+)"?/i);
+      const filename = filenameMatch ? filenameMatch[1] : "campaign.pdf";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "unknown";
+      setPdfError(`Download failed: ${msg}`);
+    } finally {
+      setPdfDownloading(false);
+    }
+  };
+
+  const copyMarkdown = async () => {
+    if (!output) return;
+    setMarkdownCopying(true);
+    try {
+      const md = buildMarkdown(inputs.clientName.trim() || "Untitled", inputs.channels, output);
+      await navigator.clipboard.writeText(md);
+      setMarkdownCopied(true);
+      setTimeout(() => setMarkdownCopied(false), 2500);
+    } catch (e) {
+      console.error("[copyMarkdown] failed:", e);
+      setPdfError(`Copy failed: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setMarkdownCopying(false);
+    }
   };
 
   const fmtBigIdea = () =>
@@ -332,14 +745,23 @@ export default function IVMCampaignEngine() {
 
           {/* Header */}
           <header className="mb-10 md:mb-14 border-b border-stone-300 pb-8">
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-4 mb-5">
               <div
-                className="w-2 h-2 rounded-full pulse-dot"
+                className="w-2 h-2 rounded-full pulse-dot flex-shrink-0"
                 style={{ backgroundColor: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
               />
-              <span className="font-mono-x text-xs uppercase tracking-widest text-stone-500">
-                IVM // Campaign Engine v5 · multi-channel
-              </span>
+              <Image
+                src="/ivm-logo.png"
+                alt="IVM"
+                width={160}
+                height={64}
+                priority
+                style={{ height: 64, width: "auto" }}
+              />
+              <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 leading-snug">
+                <div>Powered by IVM</div>
+                <div>Campaign Engine v5 · multi-channel</div>
+              </div>
             </div>
             <h1 className="font-display text-4xl md:text-6xl font-black leading-none tracking-tight">
               Multi-channel campaigns
@@ -349,6 +771,9 @@ export default function IVMCampaignEngine() {
             <p className="font-mono-x text-xs md:text-sm text-stone-500 mt-5 max-w-2xl leading-relaxed">
               Paid · Programmatic · Email · Newsletter · SMS · Organic. Big Idea spine · Schwartz awareness · Hormozi value · Halbert specificity · self-critique pass.
             </p>
+            <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mt-3">
+              Powered by IVM
+            </div>
           </header>
 
           {/* Input form */}
@@ -421,6 +846,33 @@ export default function IVMCampaignEngine() {
           {/* Output */}
           {output && (
             <div className="space-y-12">
+
+              {/* Sticky toolbar — Copy Markdown + Download PDF */}
+              <div className="sticky top-0 z-30 -mx-5 md:-mx-8 px-5 md:px-8 py-3 bg-stone-100/95 backdrop-blur border-b border-stone-300 flex flex-wrap items-center justify-end gap-2">
+                <button
+                  onClick={copyMarkdown}
+                  disabled={markdownCopying}
+                  className="flex items-center gap-2 px-4 py-2.5 border border-stone-900 bg-white text-stone-900 font-mono-x text-[10px] uppercase tracking-widest font-bold hover:bg-stone-900 hover:text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {markdownCopied ? <Check size={14} /> : markdownCopying ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCopy size={14} />}
+                  {markdownCopied ? "Copied" : markdownCopying ? "Copying..." : "Copy as Markdown"}
+                </button>
+                <button
+                  onClick={downloadPdf}
+                  disabled={pdfDownloading}
+                  className="flex items-center gap-2 px-4 py-2.5 border border-stone-900 bg-white text-stone-900 font-mono-x text-[10px] uppercase tracking-widest font-bold hover:bg-stone-900 hover:text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {pdfDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  {pdfDownloading ? "Generating PDF..." : "Download PDF"}
+                </button>
+              </div>
+
+              {pdfError && (
+                <div className="flex items-start gap-3 px-4 py-3 border border-red-300 bg-red-50">
+                  <AlertTriangle size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+                  <span className="font-mono-x text-sm text-red-700">{pdfError}</span>
+                </div>
+              )}
 
               {/* 00 Compliance */}
               <Section number="00" icon={<Shield size={18} />} title="Compliance Watch" subtitle="Read before launch">
@@ -910,8 +1362,30 @@ export default function IVMCampaignEngine() {
               <p className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">Pick channels · Drop competitors · Generate · Ship</p>
             </div>
           )}
+
+          {/* Page footer */}
+          <footer className="border-t border-stone-300 mt-16 pt-8 pb-4 flex items-center justify-center gap-3">
+            <Image
+              src="/ivm-logo.png"
+              alt="IVM"
+              width={80}
+              height={32}
+              style={{ height: 32, width: "auto" }}
+            />
+            <span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-400">
+              Powered by IVM · go-ivm.com
+            </span>
+          </footer>
         </div>
       </div>
+
+      {/* Toast: markdown copied */}
+      {markdownCopied && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 border-2 border-stone-900 bg-white card-shadow" style={{ boxShadow: `0 4px 20px ${ACCENT}66, 0 0 0 1px #1c1917` }}>
+          <Check size={16} className="text-stone-900" />
+          <span className="font-mono-x text-xs text-stone-900 font-bold">Copied , paste into Google Docs, Notion, anywhere</span>
+        </div>
+      )}
     </div>
   );
 }
