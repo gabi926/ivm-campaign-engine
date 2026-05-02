@@ -42,7 +42,8 @@ type TextField =
   | "cta"
   | "audience"
   | "voice"
-  | "competitors";
+  | "competitors"
+  | "existingLpUrl";
 
 interface CampaignInputs {
   clientName: string;
@@ -52,160 +53,17 @@ interface CampaignInputs {
   audience: string;
   voice: string;
   competitors: string;
+  existingLpUrl: string;
   channels: ChannelName[];
 }
 
-interface BigIdea {
-  claim?: string;
-  why_it_works?: string;
-  supporting_proof?: string[];
-}
-interface CompetitorIntel {
-  competitor?: string;
-  positioning?: string;
-  primary_hooks?: string[];
-  offer_structure?: string;
-  creative_patterns?: string;
-  gaps_to_exploit?: string;
-}
-interface CopyVariation {
-  angle?: string;
-  lead_type?: string;
-  awareness_level?: string;
-  traffic_temp?: string;
-  headline?: string;
-  primary_text?: string;
-  value_equation_score?: number;
-  value_equation_reasoning?: string;
-  best_for?: string;
-}
-interface CTAVariation {
-  text?: string;
-  framework?: string;
-  trigger?: string;
-}
-interface ImageConcept {
-  concept?: string;
-  ai_prompt?: string;
-  scroll_stop_principle?: string;
-  placement?: string;
-}
-interface VideoConcept {
-  hook?: string;
-  hook_framework?: string;
-  script?: string;
-  duration?: string;
-  style?: string;
-  platform_fit?: string;
-}
-interface SearchAd {
-  headline_1?: string;
-  headline_2?: string;
-  headline_3?: string;
-  description?: string;
-  intent_match?: string;
-  sitelinks?: string[];
-}
-interface BannerConcept {
-  size?: string;
-  headline?: string;
-  subhead?: string;
-  cta_button?: string;
-  visual_direction?: string;
-}
-interface NativeAd {
-  headline?: string;
-  description?: string;
-  image_direction?: string;
-}
-interface ProgrammaticCreative {
-  banner_concepts?: BannerConcept[];
-  native_ads?: NativeAd[];
-}
-interface EmailItem {
-  position?: string;
-  subject?: string;
-  preview_text?: string;
-  body?: string;
-  cta?: string;
-  send_timing?: string;
-}
-interface NewsletterIssue {
-  subject?: string;
-  preview_text?: string;
-  hook?: string;
-  body?: string;
-  soft_cta?: string;
-}
-interface SmsMessage {
-  use_case?: string;
-  message?: string;
-  compliance_note?: string;
-}
-interface ContentPillar {
-  pillar?: string;
-  purpose?: string;
-  content_types?: string[];
-}
-interface PostHook {
-  hook?: string;
-  framework?: string;
-  pillar_match?: string;
-}
-interface CaptionTemplate {
-  style?: string;
-  template?: string;
-}
-interface OrganicStrategy {
-  content_pillars?: ContentPillar[];
-  post_hooks?: PostHook[];
-  caption_templates?: CaptionTemplate[];
-  soft_ctas?: string[];
-  posting_cadence?: string;
-  link_in_bio_strategy?: string;
-}
-interface FormField {
-  label?: string;
-  type?: string;
-  required?: boolean;
-}
-interface FormSuggestions {
-  fields?: FormField[];
-  qualifying_questions?: string[];
-}
-interface LandingPageSection {
-  section?: string;
-  purpose?: string;
-  copy_direction?: string;
-}
-interface ComplianceNotes {
-  general_flags?: string[];
-  platform_specific?: Record<string, string[]>;
-}
-interface WeaknessAuditItem {
-  asset_reference?: string;
-  weakness?: string;
-  fix?: string;
-}
+import type {
+  CampaignOutput,
+  ComplianceNotes,
+  LandingPageAudit,
+  LpCategoryScore,
+} from "./_lib/campaign-types";
 
-interface CampaignOutput {
-  big_idea?: BigIdea;
-  competitor_intel?: CompetitorIntel[];
-  copy_variations?: CopyVariation[];
-  cta_variations?: CTAVariation[];
-  image_concepts?: ImageConcept[];
-  video_concepts?: VideoConcept[];
-  search_ads?: SearchAd[];
-  programmatic_creative?: ProgrammaticCreative;
-  email_sequence?: EmailItem[];
-  newsletter_issues?: NewsletterIssue[];
-  sms_messages?: SmsMessage[];
-  organic_strategy?: OrganicStrategy;
-  form_suggestions?: FormSuggestions;
-  landing_page_structure?: LandingPageSection[];
-  compliance_notes?: ComplianceNotes;
-  weakness_audit?: WeaknessAuditItem[];
-}
 
 export default function IVMCampaignEngine() {
   const [inputs, setInputs] = useState<CampaignInputs>({
@@ -216,6 +74,7 @@ export default function IVMCampaignEngine() {
     audience: "",
     voice: "",
     competitors: "",
+    existingLpUrl: "",
     channels: ["Meta"],
   });
   const [generating, setGenerating] = useState(false);
@@ -339,6 +198,56 @@ export default function IVMCampaignEngine() {
     output?.weakness_audit
       ?.map((w, i) => `${i + 1}. ${w.asset_reference}\nWeakness: ${w.weakness}\nFix: ${w.fix}`)
       .join("\n\n");
+  const fmtLpAudit = () => {
+    const a = output?.landing_page_audit;
+    if (!a) return "";
+    const cats = a.category_scores
+      ? (
+          [
+            ["Above-fold clarity", a.category_scores.above_fold_clarity],
+            ["Hero match", a.category_scores.hero_match],
+            ["Social proof", a.category_scores.social_proof],
+            ["Offer clarity", a.category_scores.offer_clarity],
+            ["CTA strength", a.category_scores.cta_strength],
+            ["Trust signals", a.category_scores.trust_signals],
+            ["Friction audit", a.category_scores.friction_audit],
+            ["Mobile considerations", a.category_scores.mobile_considerations],
+          ] as const
+        )
+          .filter(([, v]) => v)
+          .map(
+            ([label, v]) =>
+              `${label}: ${v?.score ?? "?"}/10\n  Issues: ${(v?.issues || []).join("; ") || "(none)"}\n  Fixes: ${(v?.fixes || []).join("; ") || "(none)"}`,
+          )
+          .join("\n\n")
+      : "";
+    const top3 = a.top_3_priority_fixes
+      ?.map(
+        (f) =>
+          `#${f.rank}. ${f.fix}\n  Why: ${f.why}\n  Implementation: ${f.implementation}`,
+      )
+      .join("\n\n");
+    return [
+      `LANDING PAGE AUDIT — ${a.url_audited || ""}`,
+      `Overall: ${a.overall_score ?? "?"}/100`,
+      a.big_idea_alignment
+        ? `Big Idea Alignment: ${a.big_idea_alignment.verdict || "?"} (${a.big_idea_alignment.score ?? "?"}/10)\n  LP says: ${a.big_idea_alignment.what_lp_says || ""}\n  Campaign promises: ${a.big_idea_alignment.what_campaign_promises || ""}\n  Gap: ${a.big_idea_alignment.gap_analysis || ""}`
+        : "",
+      a.five_second_test
+        ? `5-Second Test: ${a.five_second_test.verdict || "?"} — ${a.five_second_test.what_user_understands || ""}`
+        : "",
+      top3 ? `TOP 3 PRIORITY FIXES:\n${top3}` : "",
+      cats ? `CATEGORY SCORES:\n${cats}` : "",
+      (a.conversion_blockers?.length ?? 0) > 0
+        ? `CONVERSION BLOCKERS:\n${(a.conversion_blockers || []).map((b) => `- ${b}`).join("\n")}`
+        : "",
+      (a.what_is_working?.length ?? 0) > 0
+        ? `WHAT'S WORKING:\n${(a.what_is_working || []).map((w) => `- ${w}`).join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  };
   const fmtSearch = () =>
     output?.search_ads
       ?.map(
@@ -452,6 +361,7 @@ export default function IVMCampaignEngine() {
               <Field label="Target Audience" value={inputs.audience} onChange={update("audience")} placeholder="Real demographic + psychographic" />
               <Field label="Brand Voice" value={inputs.voice} onChange={update("voice")} placeholder="Tone, attitude, no-go words, reference brands" full />
               <Field label="Competitors" value={inputs.competitors} onChange={update("competitors")} placeholder="URLs or names, comma separated" multiline full />
+              <Field label="Existing Landing Page URL" value={inputs.existingLpUrl} onChange={update("existingLpUrl")} placeholder="https://... (we'll audit it against the Big Idea)" full />
             </div>
 
             {/* Channels , grouped */}
@@ -542,9 +452,29 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 02 Competitor Intel */}
+              {/* 02 Landing Page Audit (or input error) */}
+              {output.landing_page_audit && (
+                <Section number="02" icon={<Layout size={18} />} title="Landing Page Audit" subtitle="CRO strategist · Big Idea aligned" onCopyAll={() => handleCopy(fmtLpAudit(), "lpaud-all")} copiedAll={copiedKey === "lpaud-all"}>
+                  <LandingPageAuditBlock audit={output.landing_page_audit} />
+                </Section>
+              )}
+              {!output.landing_page_audit && output.audit_input_error && (
+                <Section number="02" icon={<Layout size={18} />} title="Landing Page Audit" subtitle="Skipped">
+                  <div className="border border-yellow-400 bg-yellow-50 p-5 card-shadow">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={18} className="text-yellow-700 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <div className="font-mono-x text-[10px] uppercase tracking-widest text-yellow-700 font-bold mb-1.5">Could not fetch the landing page URL</div>
+                        <p className="text-sm text-stone-800 leading-relaxed">{output.audit_input_error}</p>
+                      </div>
+                    </div>
+                  </div>
+                </Section>
+              )}
+
+              {/* 03 Competitor Intel */}
               {output.competitor_intel && output.competitor_intel.length > 0 && (
-                <Section number="02" icon={<Eye size={18} />} title="Competitor Intel" subtitle={`${output.competitor_intel.length} analyzed`} onCopyAll={() => handleCopy(fmtCompetitor() || "", "comp-all")} copiedAll={copiedKey === "comp-all"}>
+                <Section number="03" icon={<Eye size={18} />} title="Competitor Intel" subtitle={`${output.competitor_intel.length} analyzed`} onCopyAll={() => handleCopy(fmtCompetitor() || "", "comp-all")} copiedAll={copiedKey === "comp-all"}>
                   <div className="space-y-4">
                     {output.competitor_intel.map((comp, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
@@ -574,8 +504,8 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 03 Copy Angles */}
-              <Section number="03" icon={<Sparkles size={18} />} title="Copy Angles" subtitle={`${output.copy_variations?.length || 0} · framework-tagged · scored`} onCopyAll={() => handleCopy(fmtCopy() || "", "copy-all")} copiedAll={copiedKey === "copy-all"}>
+              {/* 04 Copy Angles */}
+              <Section number="04" icon={<Sparkles size={18} />} title="Copy Angles" subtitle={`${output.copy_variations?.length || 0} · framework-tagged · scored`} onCopyAll={() => handleCopy(fmtCopy() || "", "copy-all")} copiedAll={copiedKey === "copy-all"}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {output.copy_variations?.map((c, i) => (
                     <div key={i} className="border border-stone-200 bg-white card-shadow p-5 group hover:border-stone-400 transition">
@@ -603,8 +533,8 @@ export default function IVMCampaignEngine() {
                 </div>
               </Section>
 
-              {/* 04 CTAs */}
-              <Section number="04" icon={<Zap size={18} />} title="CTA Stack" subtitle={`${output.cta_variations?.length || 0} · psychology-tagged`} onCopyAll={() => handleCopy(fmtCTA() || "", "cta-all")} copiedAll={copiedKey === "cta-all"}>
+              {/* 05 CTAs */}
+              <Section number="05" icon={<Zap size={18} />} title="CTA Stack" subtitle={`${output.cta_variations?.length || 0} · psychology-tagged`} onCopyAll={() => handleCopy(fmtCTA() || "", "cta-all")} copiedAll={copiedKey === "cta-all"}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {output.cta_variations?.map((c, i) => (
                     <div key={i} className="border border-stone-200 bg-white card-shadow px-4 py-3 group hover:border-stone-400 transition">
@@ -621,9 +551,9 @@ export default function IVMCampaignEngine() {
                 </div>
               </Section>
 
-              {/* 05 Search Ads (Google) */}
+              {/* 06 Search Ads (Google) */}
               {output.search_ads && output.search_ads.length > 0 && (
-                <Section number="05" icon={<Search size={18} />} title="Search Ads" subtitle={`${output.search_ads.length} · Google ready`} onCopyAll={() => handleCopy(fmtSearch() || "", "search-all")} copiedAll={copiedKey === "search-all"}>
+                <Section number="06" icon={<Search size={18} />} title="Search Ads" subtitle={`${output.search_ads.length} · Google ready`} onCopyAll={() => handleCopy(fmtSearch() || "", "search-all")} copiedAll={copiedKey === "search-all"}>
                   <div className="space-y-3">
                     {output.search_ads.map((s, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
@@ -642,9 +572,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 06 Programmatic */}
+              {/* 07 Programmatic */}
               {output.programmatic_creative && (
-                <Section number="06" icon={<Radio size={18} />} title="Programmatic Creative" subtitle="Display banners + native" onCopyAll={() => handleCopy(fmtProg(), "prog-all")} copiedAll={copiedKey === "prog-all"}>
+                <Section number="07" icon={<Radio size={18} />} title="Programmatic Creative" subtitle="Display banners + native" onCopyAll={() => handleCopy(fmtProg(), "prog-all")} copiedAll={copiedKey === "prog-all"}>
                   <div className="space-y-6">
                     <div>
                       <h4 className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-3">Banner Concepts</h4>
@@ -681,9 +611,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 07 Email Sequence */}
+              {/* 08 Email Sequence */}
               {output.email_sequence && output.email_sequence.length > 0 && (
-                <Section number="07" icon={<Mail size={18} />} title="Email Sequence" subtitle={`${output.email_sequence.length}-email automation`} onCopyAll={() => handleCopy(fmtEmail() || "", "email-all")} copiedAll={copiedKey === "email-all"}>
+                <Section number="08" icon={<Mail size={18} />} title="Email Sequence" subtitle={`${output.email_sequence.length}-email automation`} onCopyAll={() => handleCopy(fmtEmail() || "", "email-all")} copiedAll={copiedKey === "email-all"}>
                   <div className="space-y-4">
                     {output.email_sequence.map((e, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
@@ -711,9 +641,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 08 Newsletter */}
+              {/* 09 Newsletter */}
               {output.newsletter_issues && output.newsletter_issues.length > 0 && (
-                <Section number="08" icon={<Newspaper size={18} />} title="Newsletter Issues" subtitle={`${output.newsletter_issues.length} · editorial-style`} onCopyAll={() => handleCopy(fmtNewsletter() || "", "news-all")} copiedAll={copiedKey === "news-all"}>
+                <Section number="09" icon={<Newspaper size={18} />} title="Newsletter Issues" subtitle={`${output.newsletter_issues.length} · editorial-style`} onCopyAll={() => handleCopy(fmtNewsletter() || "", "news-all")} copiedAll={copiedKey === "news-all"}>
                   <div className="space-y-4">
                     {output.newsletter_issues.map((n, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
@@ -739,9 +669,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 09 SMS */}
+              {/* 10 SMS */}
               {output.sms_messages && output.sms_messages.length > 0 && (
-                <Section number="09" icon={<MessageSquare size={18} />} title="SMS Messages" subtitle={`${output.sms_messages.length} · TCPA-aware`} onCopyAll={() => handleCopy(fmtSms() || "", "sms-all")} copiedAll={copiedKey === "sms-all"}>
+                <Section number="10" icon={<MessageSquare size={18} />} title="SMS Messages" subtitle={`${output.sms_messages.length} · TCPA-aware`} onCopyAll={() => handleCopy(fmtSms() || "", "sms-all")} copiedAll={copiedKey === "sms-all"}>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {output.sms_messages.map((s, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-4">
@@ -761,9 +691,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 10 Organic */}
+              {/* 11 Organic */}
               {output.organic_strategy && (
-                <Section number="10" icon={<Users size={18} />} title="Organic Social Strategy" subtitle="Pillars · hooks · cadence · soft CTAs" onCopyAll={() => handleCopy(fmtOrganic(), "org-all")} copiedAll={copiedKey === "org-all"}>
+                <Section number="11" icon={<Users size={18} />} title="Organic Social Strategy" subtitle="Pillars · hooks · cadence · soft CTAs" onCopyAll={() => handleCopy(fmtOrganic(), "org-all")} copiedAll={copiedKey === "org-all"}>
                   <div className="space-y-5">
                     {/* Pillars */}
                     <div className="border border-stone-200 bg-white card-shadow p-5">
@@ -831,9 +761,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 11 Image Concepts */}
+              {/* 12 Image Concepts */}
               {output.image_concepts && output.image_concepts.length > 0 && (
-                <Section number="11" icon={<ImageIcon size={18} />} title="Image Concepts" subtitle={`${output.image_concepts.length} · scroll-stop tested`} onCopyAll={() => handleCopy(fmtImages() || "", "img-all")} copiedAll={copiedKey === "img-all"}>
+                <Section number="12" icon={<ImageIcon size={18} />} title="Image Concepts" subtitle={`${output.image_concepts.length} · scroll-stop tested`} onCopyAll={() => handleCopy(fmtImages() || "", "img-all")} copiedAll={copiedKey === "img-all"}>
                   <div className="space-y-4">
                     {output.image_concepts.map((img, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
@@ -860,9 +790,9 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 12 Video Concepts */}
+              {/* 13 Video Concepts */}
               {output.video_concepts && output.video_concepts.length > 0 && (
-                <Section number="12" icon={<Video size={18} />} title="Video Concepts" subtitle={`${output.video_concepts.length} · hook-framework tagged`} onCopyAll={() => handleCopy(fmtVideos() || "", "vid-all")} copiedAll={copiedKey === "vid-all"}>
+                <Section number="13" icon={<Video size={18} />} title="Video Concepts" subtitle={`${output.video_concepts.length} · hook-framework tagged`} onCopyAll={() => handleCopy(fmtVideos() || "", "vid-all")} copiedAll={copiedKey === "vid-all"}>
                   <div className="space-y-4">
                     {output.video_concepts.map((v, i) => (
                       <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
@@ -892,8 +822,8 @@ export default function IVMCampaignEngine() {
                 </Section>
               )}
 
-              {/* 13 Form */}
-              <Section number="13" icon={<ListChecks size={18} />} title="Form Build" subtitle="Fields + qualifying questions">
+              {/* 14 Form */}
+              <Section number="14" icon={<ListChecks size={18} />} title="Form Build" subtitle="Fields + qualifying questions">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <h4 className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-3">Fields</h4>
@@ -923,8 +853,8 @@ export default function IVMCampaignEngine() {
                 </div>
               </Section>
 
-              {/* 14 LP */}
-              <Section number="14" icon={<Layout size={18} />} title="Landing Page Structure" subtitle={`${output.landing_page_structure?.length || 0} sections · Big Idea anchored`} onCopyAll={() => handleCopy(fmtLP() || "", "lp-all")} copiedAll={copiedKey === "lp-all"}>
+              {/* 15 LP */}
+              <Section number="15" icon={<Layout size={18} />} title="Landing Page Structure" subtitle={`${output.landing_page_structure?.length || 0} sections · Big Idea anchored`} onCopyAll={() => handleCopy(fmtLP() || "", "lp-all")} copiedAll={copiedKey === "lp-all"}>
                 <div className="space-y-3">
                   {output.landing_page_structure?.map((s, i) => (
                     <div key={i} className="border-l-4 pl-5 py-2" style={{ borderColor: ACCENT }}>
@@ -939,9 +869,9 @@ export default function IVMCampaignEngine() {
                 </div>
               </Section>
 
-              {/* 15 Weakness Audit */}
+              {/* 16 Weakness Audit */}
               {output.weakness_audit && output.weakness_audit.length > 0 && (
-                <Section number="15" icon={<Target size={18} />} title="Weakness Audit" subtitle="3 weakest assets · self-critique · fixes" onCopyAll={() => handleCopy(fmtAudit() || "", "aud-all")} copiedAll={copiedKey === "aud-all"}>
+                <Section number="16" icon={<Target size={18} />} title="Weakness Audit" subtitle="3 weakest assets · self-critique · fixes" onCopyAll={() => handleCopy(fmtAudit() || "", "aud-all")} copiedAll={copiedKey === "aud-all"}>
                   <div className="border-2 border-stone-900 bg-white card-shadow p-1">
                     <div className="bg-stone-900 text-stone-100 px-4 py-2 mb-1">
                       <span className="font-mono-x text-[10px] uppercase tracking-widest">⚡ Brutal honesty , patch before launch</span>
@@ -1116,6 +1046,172 @@ function ComplianceBlock({ data }: { data?: ComplianceNotes }) {
             <ul className="space-y-1.5">{flags.map((f, i) => (<li key={i} className="text-sm text-stone-800 flex gap-2"><span className="text-stone-400 flex-shrink-0">▸</span><span>{f}</span></li>))}</ul>
           </div>
         ) : null,
+      )}
+    </div>
+  );
+}
+
+function alignmentColor(verdict?: string): { bg: string; text: string; label: string } {
+  const v = (verdict || "").toLowerCase();
+  if (v === "aligned") return { bg: "#d1fae5", text: "#065f46", label: "ALIGNED" };
+  if (v === "partial") return { bg: "#fef3c7", text: "#92400e", label: "PARTIAL" };
+  if (v === "misaligned") return { bg: "#fee2e2", text: "#991b1b", label: "MISALIGNED" };
+  return { bg: "#f5f5f4", text: "#44403c", label: (verdict || "—").toUpperCase() };
+}
+
+function LandingPageAuditBlock({ audit }: { audit: LandingPageAudit }) {
+  const align = alignmentColor(audit.big_idea_alignment?.verdict);
+  const fiveSec = audit.five_second_test;
+  const cats = audit.category_scores;
+  const categoryEntries: { key: string; label: string; data: LpCategoryScore | undefined }[] = [
+    { key: "above_fold_clarity", label: "Above-fold clarity", data: cats?.above_fold_clarity },
+    { key: "hero_match", label: "Hero match", data: cats?.hero_match },
+    { key: "social_proof", label: "Social proof", data: cats?.social_proof },
+    { key: "offer_clarity", label: "Offer clarity", data: cats?.offer_clarity },
+    { key: "cta_strength", label: "CTA strength", data: cats?.cta_strength },
+    { key: "trust_signals", label: "Trust signals", data: cats?.trust_signals },
+    { key: "friction_audit", label: "Friction audit", data: cats?.friction_audit },
+    { key: "mobile_considerations", label: "Mobile", data: cats?.mobile_considerations },
+  ];
+  return (
+    <div className="space-y-5">
+      {/* Hero score + alignment */}
+      <div className="border-2 border-stone-900 bg-white card-shadow p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-center">
+          <div className="md:col-span-1 flex flex-col items-center md:items-start border-b md:border-b-0 md:border-r border-stone-200 pb-5 md:pb-0 md:pr-5">
+            <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">Overall Score</div>
+            <div className="font-display text-7xl md:text-8xl font-black leading-none">{audit.overall_score ?? "—"}<span className="font-display text-2xl text-stone-400">/100</span></div>
+            {audit.url_audited && <div className="font-mono-x text-[10px] text-stone-500 mt-2 break-all">{audit.url_audited}</div>}
+          </div>
+          <div className="md:col-span-2 space-y-3">
+            <div>
+              <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">Big Idea Alignment</div>
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <span className="font-mono-x text-[10px] font-bold uppercase tracking-widest" style={{ backgroundColor: align.bg, color: align.text, padding: "4px 10px" }}>{align.label}</span>
+                {audit.big_idea_alignment?.score != null && (
+                  <span className="font-mono-x text-[11px] font-bold text-stone-700">{audit.big_idea_alignment.score}/10</span>
+                )}
+              </div>
+              {audit.big_idea_alignment?.what_lp_says && (
+                <div className="mb-2"><span className="meta-chip mr-2">LP says</span><span className="text-sm text-stone-700">{audit.big_idea_alignment.what_lp_says}</span></div>
+              )}
+              {audit.big_idea_alignment?.what_campaign_promises && (
+                <div className="mb-2"><span className="meta-chip mr-2">Campaign promises</span><span className="text-sm text-stone-700">{audit.big_idea_alignment.what_campaign_promises}</span></div>
+              )}
+              {audit.big_idea_alignment?.gap_analysis && (
+                <div className="pt-2 border-t border-stone-200 text-sm text-stone-800 leading-relaxed"><span className="font-bold">Gap:</span> {audit.big_idea_alignment.gap_analysis}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 5-second test callout */}
+      {fiveSec && (
+        <div className="border border-stone-200 bg-white card-shadow p-5">
+          <div className="flex items-center gap-3 mb-2 flex-wrap">
+            <span className="accent-chip font-mono-x text-[10px] uppercase tracking-widest">5-Second Test</span>
+            {fiveSec.verdict && <span className="meta-chip">{fiveSec.verdict}</span>}
+          </div>
+          {fiveSec.what_user_understands && (
+            <p className="text-sm text-stone-700 leading-relaxed italic">&ldquo;{fiveSec.what_user_understands}&rdquo;</p>
+          )}
+        </div>
+      )}
+
+      {/* Top 3 priority fixes — brutal honesty treatment */}
+      {audit.top_3_priority_fixes && audit.top_3_priority_fixes.length > 0 && (
+        <div className="border-2 border-stone-900 bg-white card-shadow p-1">
+          <div className="bg-stone-900 text-stone-100 px-4 py-2 mb-1">
+            <span className="font-mono-x text-[10px] uppercase tracking-widest">⚡ Top 3 priority fixes , ranked by leverage</span>
+          </div>
+          <div className="space-y-3 p-4">
+            {audit.top_3_priority_fixes.map((f, i) => (
+              <div key={i} className="border border-stone-200 p-4 bg-stone-50">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="accent-chip font-mono-x text-[10px]">#{f.rank ?? i + 1}</span>
+                  <span className="font-display font-bold text-base">{f.fix}</span>
+                </div>
+                {f.why && (
+                  <div className="mb-2"><span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">Why</span><p className="text-sm text-stone-800 leading-relaxed mt-1">{f.why}</p></div>
+                )}
+                {f.implementation && (
+                  <div className="pt-2 border-t border-stone-200">
+                    <span className="font-mono-x text-[10px] uppercase tracking-widest font-bold inline-block" style={{ color: "#0a0a0a", backgroundColor: ACCENT, padding: "2px 6px" }}>How</span>
+                    <p className="text-sm text-stone-800 leading-relaxed mt-1.5 font-medium">{f.implementation}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Category scores grid */}
+      <div>
+        <h4 className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-3">Category Scores</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {categoryEntries.map((entry) => (
+            <div key={entry.key} className="border border-stone-200 bg-white card-shadow p-4">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <span className="font-display font-bold text-base">{entry.label}</span>
+                <span className="score-badge">{entry.data?.score ?? "—"}/10</span>
+              </div>
+              {entry.data?.issues && entry.data.issues.length > 0 && (
+                <div className="mb-2">
+                  <span className="font-mono-x text-[10px] uppercase tracking-widest text-red-700 font-bold">Issues</span>
+                  <ul className="mt-1 space-y-1">
+                    {entry.data.issues.map((iss, i) => (
+                      <li key={i} className="text-xs text-stone-700 flex gap-1.5"><span className="text-stone-400 flex-shrink-0">▸</span><span>{iss}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {entry.data?.fixes && entry.data.fixes.length > 0 && (
+                <div className="pt-2 border-t border-stone-200">
+                  <span className="font-mono-x text-[10px] uppercase tracking-widest font-bold inline-block" style={{ color: "#0a0a0a", backgroundColor: ACCENT, padding: "2px 6px" }}>Fixes</span>
+                  <ul className="mt-1.5 space-y-1">
+                    {entry.data.fixes.map((fx, i) => (
+                      <li key={i} className="text-xs text-stone-800 flex gap-1.5"><span className="text-stone-400 flex-shrink-0">▸</span><span>{fx}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Conversion blockers — yellow warning */}
+      {audit.conversion_blockers && audit.conversion_blockers.length > 0 && (
+        <div className="border border-yellow-400 bg-yellow-50 p-5 card-shadow">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-yellow-700" />
+            <span className="font-mono-x text-[10px] uppercase tracking-widest text-yellow-700 font-bold">Conversion Blockers</span>
+          </div>
+          <ul className="space-y-1.5">
+            {audit.conversion_blockers.map((b, i) => (
+              <li key={i} className="text-sm text-stone-800 flex gap-2"><span className="text-yellow-600 flex-shrink-0">▸</span><span>{b}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* What's working — green success */}
+      {audit.what_is_working && audit.what_is_working.length > 0 && (
+        <div className="border border-green-400 bg-green-50 p-4 card-shadow">
+          <div className="font-mono-x text-[10px] uppercase tracking-widest text-green-800 font-bold mb-2">What&apos;s working , don&apos;t break this</div>
+          <ul className="space-y-1">
+            {audit.what_is_working.map((w, i) => (
+              <li key={i} className="text-sm text-stone-800 flex gap-2"><span className="text-green-700 flex-shrink-0">▸</span><span>{w}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Page performance disclosure */}
+      {audit.page_performance_note && (
+        <p className="text-xs text-stone-500 italic leading-relaxed">{audit.page_performance_note}</p>
       )}
     </div>
   );
