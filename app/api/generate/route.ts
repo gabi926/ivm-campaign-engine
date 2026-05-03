@@ -544,6 +544,9 @@ export async function POST(req: NextRequest) {
     if (auditInputError) {
       out.audit_input_error = auditInputError;
     }
+    if (lpExtraction) {
+      out.tracking_infrastructure = lpExtraction.trackers;
+    }
     const audit = out.landing_page_audit;
     if (audit && typeof audit === "object" && !Array.isArray(audit)) {
       (audit as Record<string, unknown>).page_performance_note = PAGE_PERFORMANCE_NOTE;

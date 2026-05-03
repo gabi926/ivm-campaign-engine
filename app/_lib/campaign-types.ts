@@ -167,6 +167,25 @@ export interface LpPriorityFix {
   why?: string;
   implementation?: string;
 }
+export interface DetectedTracker {
+  name: string;
+  ids: string[];
+  warning?: string;
+}
+
+export type TrackingStatus =
+  | "fully_instrumented"
+  | "partially_instrumented"
+  | "missing_tracking"
+  | "deprecated";
+
+export interface TrackingInfrastructure {
+  status: TrackingStatus;
+  trackers: DetectedTracker[];
+  recommendations: string[];
+  limitations_note: string;
+}
+
 export interface LandingPageAudit {
   url_audited?: string;
   overall_score?: number;
@@ -183,6 +202,7 @@ export interface CampaignOutput {
   big_idea?: BigIdea;
   landing_page_audit?: LandingPageAudit;
   audit_input_error?: string;
+  tracking_infrastructure?: TrackingInfrastructure;
   competitor_intel?: CompetitorIntel[];
   copy_variations?: CopyVariation[];
   cta_variations?: CTAVariation[];

@@ -65,6 +65,7 @@ import type {
   ComplianceNotes,
   LandingPageAudit,
   LpCategoryScore,
+  TrackingInfrastructure,
 } from "./_lib/campaign-types";
 
 function buildMarkdown(clientName: string, channels: string[], o: CampaignOutput): string {
@@ -902,7 +903,12 @@ export default function IVMCampaignEngine() {
               {/* 02 Landing Page Audit (or input error) */}
               {output.landing_page_audit && (
                 <Section number="02" icon={<Layout size={18} />} title="Landing Page Audit" subtitle="CRO strategist · Big Idea aligned" onCopyAll={() => handleCopy(fmtLpAudit(), "lpaud-all")} copiedAll={copiedKey === "lpaud-all"}>
-                  <LandingPageAuditBlock audit={output.landing_page_audit} />
+                  <div className="space-y-6">
+                    <LandingPageAuditBlock audit={output.landing_page_audit} />
+                    {output.tracking_infrastructure && (
+                      <TrackingInfrastructureBlock data={output.tracking_infrastructure} />
+                    )}
+                  </div>
                 </Section>
               )}
               {!output.landing_page_audit && output.audit_input_error && (
@@ -1379,6 +1385,105 @@ export default function IVMCampaignEngine() {
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 border-2 border-stone-900 bg-white card-shadow" style={{ boxShadow: `0 4px 20px ${ACCENT}66, 0 0 0 1px #1c1917` }}>
           <Check size={16} className="text-stone-900" />
           <span className="font-mono-x text-xs text-stone-900 font-bold">Copied , paste into Google Docs, Notion, anywhere</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrackingInfrastructureBlock({ data }: { data: TrackingInfrastructure }) {
+  const STATUS_CFG: Record<
+    TrackingInfrastructure["status"],
+    { label: string; bg: string; text: string; border: string }
+  > = {
+    fully_instrumented: { label: "Fully instrumented", bg: "#d1fae5", text: "#065f46", border: "#10b981" },
+    partially_instrumented: { label: "Partially instrumented", bg: "#fef3c7", text: "#92400e", border: "#fbbf24" },
+    missing_tracking: { label: "Missing tracking", bg: "#fee2e2", text: "#991b1b", border: "#ef4444" },
+    deprecated: { label: "Deprecated tags detected", bg: "#fed7aa", text: "#9a3412", border: "#f97316" },
+  };
+  const cfg = STATUS_CFG[data.status];
+
+  return (
+    <div className="border border-stone-200 bg-white card-shadow p-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4 pb-3 border-b border-stone-200">
+        <div>
+          <h4 className="font-display text-lg font-bold leading-tight">Tracking Infrastructure</h4>
+          <p className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mt-1">
+            Pre-flight check · HTML-detectable trackers
+          </p>
+        </div>
+        <span
+          className="font-mono-x text-[10px] uppercase tracking-widest font-bold whitespace-nowrap"
+          style={{ backgroundColor: cfg.bg, color: cfg.text, padding: "5px 10px", border: `1px solid ${cfg.border}` }}
+        >
+          {cfg.label}
+        </span>
+      </div>
+
+      {data.trackers.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          {data.trackers.map((t, i) => (
+            <div key={i} className="border border-stone-200 bg-stone-50 p-4">
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <span className="font-display font-bold text-base">{t.name}</span>
+                {t.ids.length > 1 && (
+                  <span
+                    className="font-mono-x text-[9px] uppercase tracking-widest font-bold"
+                    style={{ backgroundColor: "#fef3c7", color: "#92400e", padding: "2px 6px", border: "1px solid #fbbf24" }}
+                  >
+                    {t.ids.length} IDs
+                  </span>
+                )}
+              </div>
+              {t.ids.length > 0 ? (
+                <ul className="space-y-1">
+                  {t.ids.map((id, j) => (
+                    <li key={j} className="font-mono-x text-xs text-stone-700 break-all">{id}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">
+                  Detected
+                </span>
+              )}
+              {t.warning && (
+                <div className="mt-2 pt-2 border-t border-stone-200 text-xs text-yellow-800">
+                  ⚠ {t.warning}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="border border-red-300 bg-red-50 p-4 mb-4">
+          <p className="text-sm text-stone-800">No HTML-detectable trackers found on this page.</p>
+        </div>
+      )}
+
+      {data.limitations_note && (
+        <details className="mb-3 border-t border-stone-200 pt-3">
+          <summary className="cursor-pointer font-mono-x text-[10px] uppercase tracking-widest text-stone-500 font-bold">
+            Limitations
+          </summary>
+          <p className="text-xs text-stone-600 italic leading-relaxed mt-2">
+            {data.limitations_note}
+          </p>
+        </details>
+      )}
+
+      {data.recommendations.length > 0 && (
+        <div className="border border-yellow-400 bg-yellow-50 p-4">
+          <h5 className="font-mono-x text-[10px] uppercase tracking-widest text-yellow-700 font-bold mb-2">
+            Recommendations
+          </h5>
+          <ul className="space-y-1.5">
+            {data.recommendations.map((r, i) => (
+              <li key={i} className="text-sm text-stone-800 flex gap-2">
+                <span className="text-yellow-600 flex-shrink-0">▸</span>
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

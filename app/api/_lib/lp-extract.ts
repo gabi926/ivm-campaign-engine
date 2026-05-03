@@ -1,5 +1,7 @@
 import { lookup } from "node:dns/promises";
 import * as cheerio from "cheerio";
+import type { TrackingInfrastructure } from "../../_lib/campaign-types";
+import { detectTrackers } from "./tracker-detect";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
@@ -18,6 +20,7 @@ export interface LpExtraction {
   ctas: string[];
   altTexts: string[];
   bodyText: string;
+  trackers: TrackingInfrastructure;
 }
 
 export type ExtractResult =
@@ -101,7 +104,7 @@ async function readWithLimit(res: Response, limit: number): Promise<string> {
   return new TextDecoder("utf-8", { fatal: false }).decode(merged);
 }
 
-function extractFromHtml(html: string): Omit<LpExtraction, "url"> {
+function extractFromHtml(html: string): Omit<LpExtraction, "url" | "trackers"> {
   const $ = cheerio.load(html);
   // Strip non-content nodes before pulling text
   $("script, style, noscript, svg, iframe, link[rel=stylesheet], meta:not([name]):not([property])").remove();
@@ -137,7 +140,7 @@ function extractFromHtml(html: string): Omit<LpExtraction, "url"> {
   return { title, metaDescription, h1, h2, h3, ctas, altTexts, bodyText };
 }
 
-function looksThin(extraction: Omit<LpExtraction, "url">): boolean {
+function looksThin(extraction: Omit<LpExtraction, "url" | "trackers">): boolean {
   if (extraction.bodyText.length < MIN_BODY_TEXT_FOR_AUDIT) return true;
   if (extraction.h1.length === 0 && extraction.h2.length === 0) return true;
   return false;
@@ -187,7 +190,8 @@ export async function fetchAndExtractLp(rawUrl: string): Promise<ExtractResult> 
     };
   }
 
-  return { ok: true, extraction: { url: url.toString(), ...extracted } };
+  const trackers = detectTrackers(html);
+  return { ok: true, extraction: { url: url.toString(), ...extracted, trackers } };
 }
 
 export function buildLpContentBlock(e: LpExtraction): string {
