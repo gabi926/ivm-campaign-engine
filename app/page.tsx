@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, ChangeEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import {
   Copy,
   Check,
@@ -429,7 +429,7 @@ export default function IVMCampaignEngine() {
     channels: ["Meta"],
   });
   const [generating, setGenerating] = useState(false);
-  const [generatingStage, setGeneratingStage] = useState("");
+  const [requestDone, setRequestDone] = useState(false);
   const [output, setOutput] = useState<CampaignOutput | null>(null);
   const [error, setError] = useState("");
   const [copiedKey, setCopiedKey] = useState("");
@@ -470,20 +470,16 @@ export default function IVMCampaignEngine() {
     }
     setError("");
     setGenerating(true);
+    setRequestDone(false);
     setOutput(null);
-    setGeneratingStage(
-      inputs.competitors.trim() || inputs.website.trim()
-        ? "Researching client + competitors..."
-        : "Building multi-channel campaign...",
-    );
 
+    let success = false;
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inputs),
       });
-      setGeneratingStage("Synthesizing campaign...");
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         const msg =
@@ -492,12 +488,22 @@ export default function IVMCampaignEngine() {
         throw new Error(msg);
       }
       setOutput(data as CampaignOutput);
+      success = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown";
       setError(`Generation failed: ${msg}. Try again.`);
     } finally {
-      setGenerating(false);
-      setGeneratingStage("");
+      if (success) {
+        // Trigger the bar's finish animation, keep it mounted briefly.
+        setRequestDone(true);
+        setTimeout(() => {
+          setGenerating(false);
+          setRequestDone(false);
+        }, 700);
+      } else {
+        // On error, drop the bar immediately so the error banner shows cleanly.
+        setGenerating(false);
+      }
     }
   };
 
@@ -815,17 +821,10 @@ export default function IVMCampaignEngine() {
                 className="group relative px-7 py-4 text-stone-900 font-mono-x text-xs uppercase tracking-widest font-bold transition disabled:opacity-50 disabled:cursor-not-allowed accent-glow"
                 style={{ backgroundColor: ACCENT }}
               >
-                {generating ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin" />
-                    {generatingStage || "Working..."}
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <Wand2 size={14} />
-                    Generate Campaign
-                  </span>
-                )}
+                <span className="flex items-center gap-2">
+                  {generating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                  {generating ? "Generating..." : "Generate Campaign"}
+                </span>
               </button>
               {output && (
                 <button
@@ -835,12 +834,8 @@ export default function IVMCampaignEngine() {
                   Reset
                 </button>
               )}
-              {generating && (
-                <span className="font-mono-x text-[10px] text-stone-500 uppercase tracking-widest">
-                  ~45-60s · scales with channels
-                </span>
-              )}
             </div>
+            {generating && <GenerationProgress done={requestDone} />}
           </section>
 
           {/* Output */}
@@ -1386,6 +1381,110 @@ export default function IVMCampaignEngine() {
           <span className="font-mono-x text-xs text-stone-900 font-bold">Copied , paste into Google Docs, Notion, anywhere</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function GenerationProgress({ done }: { done: boolean }) {
+  const STAGES = [
+    "Researching landing page...",
+    "Decoding the Big Idea...",
+    "Running Schwartz awareness analysis...",
+    "Scoring with Hormozi V.E. framework...",
+    "Generating 7 copy variations...",
+    "Building CTAs + image concepts...",
+    "Drafting video scripts...",
+    "Halbert specificity audit + self-critique...",
+  ] as const;
+  const POLISH_LABEL = "Polishing the output...";
+
+  // 0 → 90% linearly over 180s, hold at 90%, then ease-out to 100% over ~500ms when done.
+  const TARGET_MS = 180_000;
+  const STAGE_MS = TARGET_MS / STAGES.length;
+  const HOLD = 0.9;
+  const FINISH_MS = 500;
+
+  const [pct, setPct] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const finishStartRef = useRef<number | null>(null);
+  const finishStartPctRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (startRef.current === null) startRef.current = performance.now();
+    function tick() {
+      const now = performance.now();
+      const elapsed = now - (startRef.current ?? now);
+      setElapsedMs(elapsed);
+
+      if (done) {
+        if (finishStartRef.current === null) {
+          finishStartRef.current = now;
+          finishStartPctRef.current =
+            elapsed >= TARGET_MS ? HOLD : (elapsed / TARGET_MS) * HOLD;
+        }
+        const finishElapsed = now - finishStartRef.current;
+        const t = Math.min(finishElapsed / FINISH_MS, 1);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const newPct =
+          finishStartPctRef.current + (1 - finishStartPctRef.current) * eased;
+        setPct(newPct);
+        if (t >= 1) return;
+      } else {
+        setPct(Math.min(elapsed / TARGET_MS, 1) * HOLD);
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [done]);
+
+  const stageIdx = Math.min(Math.floor(elapsedMs / STAGE_MS), STAGES.length - 1);
+  const polishMode = elapsedMs > TARGET_MS && !done;
+  const label = polishMode ? POLISH_LABEL : STAGES[stageIdx];
+
+  const totalSec = Math.floor(elapsedMs / 1000);
+  const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
+  const ss = String(totalSec % 60).padStart(2, "0");
+
+  return (
+    <div className="mt-6 border border-stone-300 bg-white card-shadow p-5 max-w-2xl">
+      <div
+        className="font-mono-x text-[11px] uppercase tracking-widest text-stone-800 font-bold mb-3 flex items-center gap-2"
+        aria-live="polite"
+      >
+        {polishMode && (
+          <span
+            className="w-2 h-2 rounded-full pulse-dot flex-shrink-0"
+            style={{ backgroundColor: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
+          />
+        )}
+        <span>{label}</span>
+      </div>
+      <div
+        className="h-1.5 bg-stone-200 overflow-hidden relative"
+        role="progressbar"
+        aria-valuenow={Math.round(pct * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+      >
+        <div
+          className="h-full"
+          style={{
+            width: `${pct * 100}%`,
+            backgroundColor: ACCENT,
+            boxShadow: `0 0 8px ${ACCENT}`,
+          }}
+        />
+      </div>
+      <div className="font-mono-x text-[10px] text-stone-500 tabular-nums mt-2 text-right">
+        {mm}:{ss}
+      </div>
     </div>
   );
 }
