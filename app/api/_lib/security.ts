@@ -39,16 +39,26 @@ export function checkOrigin(req: NextRequest): { allowed: boolean; origin: strin
     return { allowed: true, origin };
   }
 
-  const customAllowed = process.env.ALLOWED_ORIGIN;
-  if (customAllowed) {
-    let normalizedHostname = customAllowed;
-    try {
-      normalizedHostname = new URL(customAllowed).hostname;
-    } catch {
-      // not a URL, treat env value as a bare hostname
-    }
-    if (origin === customAllowed || host === customAllowed || hostname === normalizedHostname) {
-      return { allowed: true, origin };
+  if (hostname === "ivm-agents.com" || hostname.endsWith(".ivm-agents.com")) {
+    return { allowed: true, origin };
+  }
+
+  const customAllowedRaw = process.env.ALLOWED_ORIGINS;
+  if (customAllowedRaw) {
+    const entries = customAllowedRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const entry of entries) {
+      let normalizedHostname = entry;
+      try {
+        normalizedHostname = new URL(entry).hostname;
+      } catch {
+        // not a URL, treat env value as a bare hostname
+      }
+      if (origin === entry || host === entry || hostname === normalizedHostname) {
+        return { allowed: true, origin };
+      }
     }
   }
 
