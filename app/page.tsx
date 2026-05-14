@@ -57,6 +57,8 @@ export default function IVMCampaignEngine() {
   const [error, setError] = useState("");
   // null = one-off campaign (no portal client); UUID = saved client.
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  // Brief confirmation banner that auto-dismisses after a successful save.
+  const [showSavedToast, setShowSavedToast] = useState(false);
 
   const handleClientChange = (client: ClientOption | null) => {
     setSelectedClientId(client?.id ?? null);
@@ -90,6 +92,7 @@ export default function IVMCampaignEngine() {
       return;
     }
     setError("");
+    setShowSavedToast(false);
     setGenerating(true);
     setRequestDone(false);
     setOutput(null);
@@ -113,10 +116,39 @@ export default function IVMCampaignEngine() {
         throw new Error(msg);
       }
       setOutput(data as CampaignOutput);
+      // Surface a brief confirmation that the campaign was persisted. Self-
+      // dismisses after 4s so it doesn't linger past the user reading it.
+      setShowSavedToast(true);
+      setTimeout(() => setShowSavedToast(false), 4000);
       success = true;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "unknown";
-      setError(`Generation failed: ${msg}. Try again.`);
+    } catch (err: unknown) {
+      // Extract a human message from anything throw-able. Previously this
+      // produced "[object Object]" when the catch received a plain object
+      // (e.g. a rejected JSON envelope), making completed-but-slow runs
+      // look like failures.
+      let message = "Try again.";
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (typeof err === "string") {
+        message = err;
+      } else if (err && typeof err === "object") {
+        const e = err as Record<string, unknown>;
+        if (typeof e.message === "string") message = e.message;
+        else if (typeof e.error === "string") message = e.error;
+      }
+      // Network / timeout heuristic — the audit usually completes server-side
+      // anyway. Steer the user to history instead of telling them to retry.
+      const lower = message.toLowerCase();
+      if (
+        lower.includes("fetch") ||
+        lower.includes("network") ||
+        lower.includes("timeout") ||
+        lower.includes("failed to fetch")
+      ) {
+        message =
+          "Connection interrupted. Your campaign may still be generating — check /history in a minute.";
+      }
+      setError(`Generation failed: ${message}`);
     } finally {
       if (success) {
         // Trigger the bar's finish animation, keep it mounted briefly.
@@ -135,6 +167,7 @@ export default function IVMCampaignEngine() {
   const reset = () => {
     setOutput(null);
     setError("");
+    setShowSavedToast(false);
   };
 
   return (
@@ -237,6 +270,25 @@ export default function IVMCampaignEngine() {
             {generating && <GenerationProgress done={requestDone} />}
           </section>
 
+          {/* Saved-to-history confirmation — only on a fresh successful
+              generation; auto-dismisses after 4s via the timeout in generate(). */}
+          {output && showSavedToast && (
+            <div
+              className="mb-8 flex items-center gap-3 border-l-4 bg-white card-shadow px-5 py-3"
+              style={{ borderLeftColor: ACCENT }}
+              role="status"
+              aria-live="polite"
+            >
+              <span
+                className="w-2 h-2 rounded-full pulse-dot flex-shrink-0"
+                style={{ backgroundColor: ACCENT, boxShadow: `0 0 8px ${ACCENT}` }}
+              />
+              <span className="font-mono-x text-xs uppercase tracking-widest text-stone-800 font-bold">
+                Campaign saved to your history
+              </span>
+            </div>
+          )}
+
           {/* Output */}
           {output && <CampaignReportView output={output} clientName={inputs.clientName} channels={inputs.channels} />}
 
@@ -268,22 +320,21 @@ export default function IVMCampaignEngine() {
 }
 
 
-function GenerationProgress({ done }: { done: boolean }) {
-  const STAGES = [
-    "Researching landing page...",
-    "Decoding the Big Idea...",
-    "Running Schwartz awareness analysis...",
-    "Scoring with Hormozi V.E. framework...",
-    "Generating 7 copy variations...",
-    "Building CTAs + image concepts...",
-    "Drafting video scripts...",
-    "Halbert specificity audit + self-critique...",
-  ] as const;
-  const POLISH_LABEL = "Polishing the output...";
+// Phased reassurance label — replaces the older per-section flavor STAGES
+// so the user always sees a "how much longer / is this stuck" message that
+// matches the actual elapsed time, including the "still going past 90s" path
+// which is the spot people start to worry.
+function phasedReassurance(elapsedMs: number): string {
+  const sec = elapsedMs / 1000;
+  if (sec < 15) return "Generating your campaign...";
+  if (sec < 45) return "Working on each channel...";
+  if (sec < 90) return "Almost there. Multi-channel runs take 1-2 minutes.";
+  return "Still generating. Hang tight — large campaigns can take up to 3 minutes.";
+}
 
+function GenerationProgress({ done }: { done: boolean }) {
   // 0 → 90% linearly over 180s, hold at 90%, then ease-out to 100% over ~500ms when done.
   const TARGET_MS = 180_000;
-  const STAGE_MS = TARGET_MS / STAGES.length;
   const HOLD = 0.9;
   const FINISH_MS = 500;
 
@@ -326,9 +377,10 @@ function GenerationProgress({ done }: { done: boolean }) {
     };
   }, [done]);
 
-  const stageIdx = Math.min(Math.floor(elapsedMs / STAGE_MS), STAGES.length - 1);
+  // Past 3 min and still going: pulse the dot to signal we're in extended
+  // territory but still alive. The label itself comes from phasedReassurance.
   const polishMode = elapsedMs > TARGET_MS && !done;
-  const label = polishMode ? POLISH_LABEL : STAGES[stageIdx];
+  const label = phasedReassurance(elapsedMs);
 
   const totalSec = Math.floor(elapsedMs / 1000);
   const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
