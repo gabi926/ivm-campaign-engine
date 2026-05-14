@@ -12,16 +12,24 @@ export function PortalHeader({ email }: { email: string }) {
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-stone-300 px-5 md:px-8 py-3 flex items-center justify-between gap-4">
-      <Link
-        href="/"
-        className="font-mono uppercase tracking-widest text-xs md:text-sm font-bold text-stone-900 flex items-center gap-2 hover:opacity-80 transition"
-      >
-        <span
-          className="inline-block w-2 h-2 rounded-full"
-          style={{ backgroundColor: ACCENT }}
-        />
-        Revenue Engine
-      </Link>
+      <div className="flex items-center gap-4 md:gap-6">
+        <Link
+          href="/"
+          className="font-mono uppercase tracking-widest text-xs md:text-sm font-bold text-stone-900 flex items-center gap-2 hover:opacity-80 transition"
+        >
+          <span
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: ACCENT }}
+          />
+          Revenue Engine
+        </Link>
+        <Link
+          href="/history"
+          className="font-mono text-[10px] md:text-[11px] uppercase tracking-widest text-stone-600 hover:text-stone-900 transition"
+        >
+          History
+        </Link>
+      </div>
 
       <div className="flex items-center gap-3 md:gap-5">
         <span className="hidden sm:inline font-mono text-[10px] md:text-[11px] uppercase tracking-widest text-stone-500 truncate max-w-[220px] md:max-w-none">

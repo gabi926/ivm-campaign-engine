@@ -7,6 +7,8 @@ import {
   fetchAndExtractLp,
   type LpExtraction,
 } from "../_lib/lp-extract";
+import { getUser } from "@/app/_lib/auth";
+import { createClient as createSupabaseClient } from "@/app/_lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -33,6 +35,18 @@ interface CampaignInputs {
   competitors: string;
   existingLpUrl: string;
   channels: ChannelName[];
+  clientId: string | null; // null = one-off campaign (no portal client linked)
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeClientId(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string") throw new ValidationError("clientId must be a string");
+  if (!UUID_RE.test(raw)) throw new ValidationError("clientId must be a UUID");
+  // No DB existence check — RLS on campaigns rejects the insert if the user
+  // doesn't have access to that client_id. Trust the database.
+  return raw;
 }
 
 const ALLOWED_CHANNELS: readonly ChannelName[] = [
@@ -48,7 +62,7 @@ const ALLOWED_CHANNELS: readonly ChannelName[] = [
   "Organic Social",
 ] as const;
 
-const FIELD_CAPS: Record<keyof Omit<CampaignInputs, "channels">, number> = {
+const FIELD_CAPS: Record<keyof Omit<CampaignInputs, "channels" | "clientId">, number> = {
   clientName: 2000,
   website: 2000,
   offer: 4000,
@@ -104,7 +118,7 @@ function validateInputs(body: unknown): CampaignInputs {
   const out: Partial<CampaignInputs> = {};
 
   for (const [field, cap] of Object.entries(FIELD_CAPS) as [
-    keyof Omit<CampaignInputs, "channels">,
+    keyof Omit<CampaignInputs, "channels" | "clientId">,
     number,
   ][]) {
     const v = b[field];
@@ -131,6 +145,7 @@ function validateInputs(body: unknown): CampaignInputs {
     }
   }
   out.channels = b.channels as ChannelName[];
+  out.clientId = normalizeClientId(b.clientId);
 
   return out as CampaignInputs;
 }
@@ -551,6 +566,33 @@ export async function POST(req: NextRequest) {
     if (audit && typeof audit === "object" && !Array.isArray(audit)) {
       (audit as Record<string, unknown>).page_performance_note = PAGE_PERFORMANCE_NOTE;
     }
+  }
+
+  // Persist to campaigns for portal history. Fire-and-forget — a save
+  // failure must not break the generation response. The proxy already
+  // verified the session, so getUser() should return a user; if it doesn't
+  // (race or misconfig) we skip silently.
+  try {
+    const user = await getUser();
+    if (user) {
+      const supabase = await createSupabaseClient();
+      await supabase.from("campaigns").insert({
+        user_id: user.id,
+        client_id: inputs.clientId,
+        brand_name: inputs.clientName,
+        website: inputs.website,
+        offer: inputs.offer,
+        primary_cta: inputs.cta,
+        target_audience: inputs.audience,
+        brand_voice: inputs.voice,
+        competitors: inputs.competitors,
+        channels: inputs.channels,
+        campaign_json: parsed,
+        status: "completed",
+      });
+    }
+  } catch (e) {
+    console.warn("[campaign] campaigns insert failed; continuing:", e);
   }
 
   return NextResponse.json(parsed, { status: 200 });
