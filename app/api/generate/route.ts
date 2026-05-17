@@ -9,6 +9,7 @@ import {
 } from "../_lib/lp-extract";
 import { getUser } from "@/app/_lib/auth";
 import { createClient as createSupabaseClient } from "@/app/_lib/supabase/server";
+import type { BriefData } from "@/app/_lib/brief-types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -150,7 +151,33 @@ function validateInputs(body: unknown): CampaignInputs {
   return out as CampaignInputs;
 }
 
-function buildPrompt(inputs: CampaignInputs, lp: LpExtraction | null): string {
+// Imported Conversion Intel brief. Serialized verbatim into the prompt as a
+// structured XML block so Claude can lean on the competitive intelligence.
+// All 7 sections are always emitted (never selectively) — a missing section
+// just stringifies as `undefined`, which is harmless context.
+function buildBriefBlock(briefData: BriefData | null): string {
+  if (!briefData) return "";
+  const section = (tag: string, val: unknown) =>
+    `<${tag}>${JSON.stringify(val, null, 2)}</${tag}>`;
+  return `
+
+STRATEGIC INTELLIGENCE FROM COMPETITIVE BRIEF:
+${section("winning_hooks", briefData.winning_hooks)}
+${section("price_positioning", briefData.price_positioning)}
+${section("audience_messaging", briefData.audience_messaging)}
+${section("creative_format_trends", briefData.creative_format_trends)}
+${section("cta_strategies", briefData.cta_strategies)}
+${section("gap_analysis", briefData.gap_analysis)}
+${section("recommended_actions", briefData.recommended_actions)}
+
+Use this competitive intelligence to inform creative direction, hook framing, messaging angles, and CTA selection. Lean into the untapped angles identified in the gap analysis. Match the tone patterns from audience_messaging where appropriate.`;
+}
+
+function buildPrompt(
+  inputs: CampaignInputs,
+  lp: LpExtraction | null,
+  briefData: BriefData | null,
+): string {
   const channelsList = inputs.channels.join(", ");
   const has = (c: ChannelName) => inputs.channels.includes(c);
   const hasAnyPaidSocial = (
@@ -391,7 +418,7 @@ QUANTITIES:
 - compliance_notes: real flags or note clean
 - weakness_audit: exactly 3 entries
 
-Voice: ${inputs.voice || "Sharp, specific, edged , human with POV"}.
+Voice: ${inputs.voice || "Sharp, specific, edged , human with POV"}.${buildBriefBlock(briefData)}
 
 JSON FORMATTING REQUIREMENTS: All multi-line content in body, script, message, text, what_user_understands, gap_analysis, what_lp_says, what_campaign_promises, why, implementation, weakness, or fix fields MUST use literal \\n for line breaks (never raw newlines). All quote characters inside string values MUST be escaped as \\". Never include unescaped quotes or unescaped newlines inside any JSON string value. The output MUST be parseable by standard JSON.parse on the first attempt.`;
 }
@@ -418,9 +445,17 @@ export async function POST(req: NextRequest) {
   }
 
   let inputs: CampaignInputs;
+  let briefData: BriefData | null = null;
   try {
     const body = await req.json();
     inputs = validateInputs(body);
+    // Optional imported Conversion Intel brief. Accept any plain object;
+    // anything else (absent, null, array, primitive) → no brief, identical
+    // behavior to before this feature.
+    const rawBrief = (body as Record<string, unknown>)?.briefData;
+    if (rawBrief && typeof rawBrief === "object" && !Array.isArray(rawBrief)) {
+      briefData = rawBrief as BriefData;
+    }
   } catch (e) {
     if (e instanceof ValidationError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -451,7 +486,7 @@ export async function POST(req: NextRequest) {
   }
 
   const client = new Anthropic({ apiKey });
-  const prompt = buildPrompt(inputs, lpExtraction);
+  const prompt = buildPrompt(inputs, lpExtraction, briefData);
 
   let response: Anthropic.Messages.Message;
   try {

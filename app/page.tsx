@@ -6,6 +6,8 @@ import { AlertTriangle, Loader2, Wand2 } from "lucide-react";
 import type { CampaignOutput } from "./_lib/campaign-types";
 import { CampaignReportView } from "./components/CampaignReportView";
 import { ClientSelector, type ClientOption } from "./components/ClientSelector";
+import { BriefImporter } from "./components/BriefImporter";
+import type { ImportedBrief } from "./_lib/brief-types";
 
 const PAID = ["Meta", "Google", "TikTok", "YouTube", "LinkedIn", "Programmatic"] as const;
 const LIFECYCLE = ["Email", "Newsletter", "SMS"] as const;
@@ -57,6 +59,10 @@ export default function IVMCampaignEngine() {
   const [error, setError] = useState("");
   // null = one-off campaign (no portal client); UUID = saved client.
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  // Imported Conversion Intel brief, if any. Its brief_data rides along to
+  // /api/generate so Claude gets the competitive intelligence; detaching
+  // clears this but intentionally leaves the pre-filled fields in place.
+  const [importedBrief, setImportedBrief] = useState<ImportedBrief | null>(null);
   // Brief confirmation banner that auto-dismisses after a successful save.
   const [showSavedToast, setShowSavedToast] = useState(false);
 
@@ -67,6 +73,24 @@ export default function IVMCampaignEngine() {
     if (client && !inputs.clientName.trim()) {
       setInputs((p) => ({ ...p, clientName: client.name }));
     }
+  };
+
+  const handleBriefSelected = (brief: ImportedBrief | null) => {
+    if (!brief) {
+      // Detach: drop the intel payload but keep whatever the brief pre-filled
+      // so the user doesn't lose populated fields.
+      setImportedBrief(null);
+      return;
+    }
+    setImportedBrief(brief);
+    // Pre-fill the matching form fields. The form has no dedicated "niche"
+    // field, so niche only rides along inside importedBrief.brief_data.
+    setInputs((p) => ({
+      ...p,
+      offer: brief.offer || p.offer,
+      audience: brief.audience || p.audience,
+      competitors: brief.competitors || p.competitors,
+    }));
   };
 
   const toggleChannel = (c: ChannelName) => {
@@ -103,6 +127,7 @@ export default function IVMCampaignEngine() {
       // validates UUID shape, RLS rejects writes to clients the user can't access.
       const body: Record<string, unknown> = { ...inputs };
       if (selectedClientId) body.clientId = selectedClientId;
+      if (importedBrief) body.briefData = importedBrief.brief_data;
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -213,6 +238,13 @@ export default function IVMCampaignEngine() {
 
           {/* Input form */}
           <section className="mb-10">
+            <div className="mb-5">
+              <BriefImporter
+                clientId={selectedClientId}
+                onBriefSelected={handleBriefSelected}
+                disabled={generating}
+              />
+            </div>
             <div className="mb-5">
               <ClientSelector onClientChange={handleClientChange} disabled={generating} />
             </div>
