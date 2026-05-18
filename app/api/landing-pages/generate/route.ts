@@ -20,7 +20,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // Spec pins claude-sonnet-4-6 for Chunk A; the repo's /api/generate uses
 // claude-sonnet-4-5. Intentional per-feature divergence (approved).
