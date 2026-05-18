@@ -10,6 +10,7 @@ import {
 import { getUser } from "@/app/_lib/auth";
 import { createClient as createSupabaseClient } from "@/app/_lib/supabase/server";
 import type { BriefData } from "@/app/_lib/brief-types";
+import type { AuditReportJson } from "@/app/_lib/audit-types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -173,10 +174,50 @@ ${section("recommended_actions", briefData.recommended_actions)}
 Use this competitive intelligence to inform creative direction, hook framing, messaging angles, and CTA selection. Lean into the untapped angles identified in the gap analysis. Match the tone patterns from audience_messaging where appropriate.`;
 }
 
+// Imported Audit Engine report. Unlike the brief block, this is CURATED to
+// control token cost: report_json is ~30KB and most of it is raw metrics
+// dumps with no strategic value for a copywriter. We inject only the four
+// distilled / strategically-relevant sections and skip totals, all_campaigns,
+// bottom_performers, spend_concentration, account, filters_applied,
+// audit_mode, generated_at. From andromeda_lens we take only readiness_score
+// (not the heavy enriched_data). Every read is defensive — the JSON shape may
+// vary across audit runs, so a missing section just stringifies as undefined.
+function buildAuditBlock(auditData: AuditReportJson | null): string {
+  if (!auditData) return "";
+
+  const andromeda =
+    auditData.andromeda_lens &&
+    typeof auditData.andromeda_lens === "object" &&
+    !Array.isArray(auditData.andromeda_lens)
+      ? (auditData.andromeda_lens as Record<string, unknown>)
+      : undefined;
+
+  const curated = {
+    claude_analysis: auditData.claude_analysis,
+    pixel_health: auditData.pixel_health,
+    andromeda_readiness: andromeda?.readiness_score,
+    top_performers: auditData.top_performers,
+  };
+
+  const section = (tag: string, val: unknown) =>
+    `<${tag}>${JSON.stringify(val, null, 2)}</${tag}>`;
+
+  return `
+
+META AD ACCOUNT AUDIT (current account state and diagnostics):
+${section("claude_analysis", curated.claude_analysis)}
+${section("pixel_health", curated.pixel_health)}
+${section("andromeda_readiness", curated.andromeda_readiness)}
+${section("top_performers", curated.top_performers)}
+
+Use this audit data to inform creative direction. Specifically: address the pixel health issues in the campaign setup recommendations, study the top performers' creative_samples to identify winning patterns to evolve (don't copy verbatim), and align creative awareness levels and angles with the gaps identified in claude_analysis. If pixel_health.has_purchase_event is false or critical diagnostics exist, weakness_audit MUST flag this as a foundational risk that affects all campaign output.`;
+}
+
 function buildPrompt(
   inputs: CampaignInputs,
   lp: LpExtraction | null,
   briefData: BriefData | null,
+  auditData: AuditReportJson | null,
 ): string {
   const channelsList = inputs.channels.join(", ");
   const has = (c: ChannelName) => inputs.channels.includes(c);
@@ -418,7 +459,7 @@ QUANTITIES:
 - compliance_notes: real flags or note clean
 - weakness_audit: exactly 3 entries
 
-Voice: ${inputs.voice || "Sharp, specific, edged , human with POV"}.${buildBriefBlock(briefData)}
+Voice: ${inputs.voice || "Sharp, specific, edged , human with POV"}.${buildBriefBlock(briefData)}${buildAuditBlock(auditData)}
 
 JSON FORMATTING REQUIREMENTS: All multi-line content in body, script, message, text, what_user_understands, gap_analysis, what_lp_says, what_campaign_promises, why, implementation, weakness, or fix fields MUST use literal \\n for line breaks (never raw newlines). All quote characters inside string values MUST be escaped as \\". Never include unescaped quotes or unescaped newlines inside any JSON string value. The output MUST be parseable by standard JSON.parse on the first attempt.`;
 }
@@ -446,6 +487,7 @@ export async function POST(req: NextRequest) {
 
   let inputs: CampaignInputs;
   let briefData: BriefData | null = null;
+  let auditData: AuditReportJson | null = null;
   try {
     const body = await req.json();
     inputs = validateInputs(body);
@@ -455,6 +497,13 @@ export async function POST(req: NextRequest) {
     const rawBrief = (body as Record<string, unknown>)?.briefData;
     if (rawBrief && typeof rawBrief === "object" && !Array.isArray(rawBrief)) {
       briefData = rawBrief as BriefData;
+    }
+    // Optional imported Audit Engine report. Same tolerance as briefData:
+    // absent/null/array/primitive → no audit block, identical behavior to
+    // before this feature. Curation happens in buildAuditBlock().
+    const rawAudit = (body as Record<string, unknown>)?.auditData;
+    if (rawAudit && typeof rawAudit === "object" && !Array.isArray(rawAudit)) {
+      auditData = rawAudit as AuditReportJson;
     }
   } catch (e) {
     if (e instanceof ValidationError) {
@@ -486,7 +535,7 @@ export async function POST(req: NextRequest) {
   }
 
   const client = new Anthropic({ apiKey });
-  const prompt = buildPrompt(inputs, lpExtraction, briefData);
+  const prompt = buildPrompt(inputs, lpExtraction, briefData, auditData);
 
   let response: Anthropic.Messages.Message;
   try {

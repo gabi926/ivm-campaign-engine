@@ -7,7 +7,9 @@ import type { CampaignOutput } from "./_lib/campaign-types";
 import { CampaignReportView } from "./components/CampaignReportView";
 import { ClientSelector, type ClientOption } from "./components/ClientSelector";
 import { BriefImporter } from "./components/BriefImporter";
+import { AuditImporter } from "./components/AuditImporter";
 import type { ImportedBrief } from "./_lib/brief-types";
+import type { ImportedAudit } from "./_lib/audit-types";
 
 const PAID = ["Meta", "Google", "TikTok", "YouTube", "LinkedIn", "Programmatic"] as const;
 const LIFECYCLE = ["Email", "Newsletter", "SMS"] as const;
@@ -63,6 +65,10 @@ export default function IVMCampaignEngine() {
   // /api/generate so Claude gets the competitive intelligence; detaching
   // clears this but intentionally leaves the pre-filled fields in place.
   const [importedBrief, setImportedBrief] = useState<ImportedBrief | null>(null);
+  // Imported Audit Engine report, if any. Its report_json rides along to
+  // /api/generate as auditData so Claude gets account-level diagnostics;
+  // detaching clears this but leaves form fields untouched (no pre-fill).
+  const [importedAudit, setImportedAudit] = useState<ImportedAudit | null>(null);
   // Brief confirmation banner that auto-dismisses after a successful save.
   const [showSavedToast, setShowSavedToast] = useState(false);
 
@@ -91,6 +97,13 @@ export default function IVMCampaignEngine() {
       audience: brief.audience || p.audience,
       competitors: brief.competitors || p.competitors,
     }));
+  };
+
+  const handleAuditSelected = (audit: ImportedAudit | null) => {
+    // No field pre-fill in either direction — audit data is too rich to map
+    // to form fields cleanly. report_json only rides along as auditData.
+    // Detach just drops the payload; form fields are never touched.
+    setImportedAudit(audit);
   };
 
   const toggleChannel = (c: ChannelName) => {
@@ -128,6 +141,7 @@ export default function IVMCampaignEngine() {
       const body: Record<string, unknown> = { ...inputs };
       if (selectedClientId) body.clientId = selectedClientId;
       if (importedBrief) body.briefData = importedBrief.brief_data;
+      if (importedAudit) body.auditData = importedAudit.report_json;
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -238,10 +252,15 @@ export default function IVMCampaignEngine() {
 
           {/* Input form */}
           <section className="mb-10">
-            <div className="mb-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
               <BriefImporter
                 clientId={selectedClientId}
                 onBriefSelected={handleBriefSelected}
+                disabled={generating}
+              />
+              <AuditImporter
+                clientId={selectedClientId}
+                onAuditSelected={handleAuditSelected}
                 disabled={generating}
               />
             </div>
