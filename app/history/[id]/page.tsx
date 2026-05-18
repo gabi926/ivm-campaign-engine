@@ -20,6 +20,7 @@ interface CampaignDetailRow {
   channels: string[] | null;
   campaign_json: CampaignOutput | null;
   status: string | null;
+  client_id: string | null;
 }
 
 export default async function CampaignDetailPage({
@@ -33,7 +34,7 @@ export default async function CampaignDetailPage({
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("campaigns")
-    .select("id, created_at, brand_name, channels, campaign_json, status")
+    .select("id, created_at, brand_name, channels, campaign_json, status, client_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -60,6 +61,8 @@ export default async function CampaignDetailPage({
             output={row.campaign_json}
             clientName={row.brand_name ?? "Untitled"}
             channels={row.channels ?? []}
+            campaignId={row.id}
+            clientId={row.client_id}
           />
         </div>
       </div>

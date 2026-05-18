@@ -36,6 +36,7 @@ import {
   Video,
   Zap,
 } from "lucide-react";
+import { GenerateBlueprintButton } from "@/app/components/GenerateBlueprintButton";
 import type {
   CampaignOutput,
   ComplianceNotes,
@@ -935,9 +936,21 @@ interface CampaignReportViewProps {
   output: CampaignOutput;
   clientName: string;
   channels: string[];
+  // Present on the saved-campaign detail view so the LP-blueprint CTA can
+  // link back to the source campaign. Omitted on the fresh-generation home
+  // page (no persisted id surfaced client-side) so the CTA renders there
+  // once the campaign is opened from history.
+  campaignId?: string;
+  clientId?: string | null;
 }
 
-export function CampaignReportView({ output, clientName, channels }: CampaignReportViewProps) {
+export function CampaignReportView({
+  output,
+  clientName,
+  channels,
+  campaignId,
+  clientId = null,
+}: CampaignReportViewProps) {
   const [copiedKey, setCopiedKey] = useState("");
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [pdfError, setPdfError] = useState("");
@@ -1028,6 +1041,12 @@ export function CampaignReportView({ output, clientName, channels }: CampaignRep
             {pdfDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             {pdfDownloading ? "Generating PDF..." : "Download PDF"}
           </button>
+          {campaignId && (
+            <GenerateBlueprintButton
+              campaignId={campaignId}
+              clientId={clientId}
+            />
+          )}
         </div>
 
         {pdfError && (
