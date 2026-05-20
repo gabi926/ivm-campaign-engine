@@ -5,7 +5,7 @@
 // dropdowns from the result set, supports fullscreen preview + delete confirm.
 // URL state is synced via router.replace so filters persist on reload.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -79,35 +79,43 @@ export function LibraryGrid({
     }
   }, [clientId, campaignId, type, status, router, search]);
 
-  // Fetch on filter change.
-  const fetchAssets = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (clientId) params.set("clientId", clientId);
-      if (campaignId) params.set("campaignId", campaignId);
-      if (type) params.set("assetType", type);
-      if (status) params.set("status", status);
-      const res = await fetch(`/api/assets/list?${params.toString()}`);
-      const data = (await res.json().catch(() => null)) as
-        | { success?: boolean; assets?: AssetListItem[]; error?: string }
-        | null;
-      if (!res.ok || !data?.success || !Array.isArray(data.assets)) {
-        throw new Error(data?.error ?? `List failed (${res.status})`);
-      }
-      setAssets(data.assets);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load assets");
-      setAssets([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [clientId, campaignId, type, status]);
-
+  // Fetch on filter change. Inlined to satisfy react-hooks/set-state-in-effect
+  // (calling a useCallback'd fetcher from useEffect trips the strict rule).
+  // Cancellation guard prevents stale writes when filters change rapidly.
   useEffect(() => {
-    void fetchAssets();
-  }, [fetchAssets]);
+    let cancelled = false;
+    const run = async () => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        if (clientId) params.set("clientId", clientId);
+        if (campaignId) params.set("campaignId", campaignId);
+        if (type) params.set("assetType", type);
+        if (status) params.set("status", status);
+        const res = await fetch(`/api/assets/list?${params.toString()}`);
+        const data = (await res.json().catch(() => null)) as
+          | { success?: boolean; assets?: AssetListItem[]; error?: string }
+          | null;
+        if (cancelled) return;
+        if (!res.ok || !data?.success || !Array.isArray(data.assets)) {
+          throw new Error(data?.error ?? `List failed (${res.status})`);
+        }
+        setAssets(data.assets);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Failed to load assets");
+        setAssets([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, campaignId, type, status]);
 
   // Derive dropdown options from the (unfiltered-by-this-axis) result set.
   // For simplicity we derive from the current result list — the user sees only

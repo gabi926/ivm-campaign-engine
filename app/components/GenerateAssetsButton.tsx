@@ -104,9 +104,12 @@ export function GenerateAssetsButton({
   );
 
   useEffect(() => {
+    // Snapshot the ref so the cleanup function references the same record we
+    // mounted with (react-hooks/exhaustive-deps guidance).
+    const timersRef = timers.current;
     return () => {
-      for (const k of Object.keys(timers.current) as SlotKey[]) {
-        const t = timers.current[k];
+      for (const k of Object.keys(timersRef) as SlotKey[]) {
+        const t = timersRef[k];
         if (t) clearInterval(t);
       }
     };

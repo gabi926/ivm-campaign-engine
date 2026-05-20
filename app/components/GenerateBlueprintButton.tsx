@@ -36,8 +36,10 @@ export function GenerateBlueprintButton({
 
   useEffect(() => {
     if (!busy) {
+      // Cleanup any running timer when we leave busy state. The phase reset
+      // happens in the generate() error handler — keeping setState out of an
+      // effect body avoids cascading-render warnings (react-hooks/set-state-in-effect).
       if (timer.current) clearInterval(timer.current);
-      setPhase(0);
       return;
     }
     timer.current = setInterval(
@@ -73,6 +75,7 @@ export function GenerateBlueprintButton({
     } catch (e) {
       setError(e instanceof Error ? e.message : "unknown error");
       setBusy(false);
+      setPhase(0); // reset cycle on failure (was previously done in the busy effect)
     }
   };
 
