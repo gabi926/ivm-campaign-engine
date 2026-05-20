@@ -29,6 +29,18 @@ export function PortalHeader({ email }: { email: string }) {
         >
           History
         </Link>
+        <Link
+          href="/blueprints"
+          className="font-mono text-[10px] md:text-[11px] uppercase tracking-widest text-stone-600 hover:text-stone-900 transition"
+        >
+          Blueprints
+        </Link>
+        <Link
+          href="/library"
+          className="font-mono text-[10px] md:text-[11px] uppercase tracking-widest text-stone-600 hover:text-stone-900 transition"
+        >
+          Library
+        </Link>
       </div>
 
       <div className="flex items-center gap-3 md:gap-5">
