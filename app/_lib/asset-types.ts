@@ -140,12 +140,15 @@ export interface NormalizedSubmit {
   raw: HiggsfieldSubmitResponse;
 }
 
-// Ad block shape consumed by GenerateAssetsButton — loose because the
-// underlying campaign_json.copy_variations schema isn't strongly typed here.
+// Ad block shape consumed by GenerateAssetsButton. Union of what
+// CopyVariation actually emits (headline, primary_text, angle) plus extras
+// we'd look for if the schema evolved. No index signature — the explicit
+// fields are sufficient and avoid CopyVariation TS2322 mismatches.
 export interface AdBlockLike {
   headline?: string | null;
+  primary_text?: string | null;
   body?: string | null;
+  angle?: string | null;
   visual_direction?: string | null;
   cta?: string | null;
-  [k: string]: unknown;
 }

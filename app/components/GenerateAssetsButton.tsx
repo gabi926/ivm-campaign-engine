@@ -61,8 +61,16 @@ function slotKey(blockIdx: number, assetType: AssetType): SlotKey {
 }
 
 function defaultPrompt(b: AdBlockLike): string {
+  // Try the most "visual" field first, fall through to copy fields.
+  const candidates = [
+    b.visual_direction,
+    b.primary_text,
+    b.body,
+    b.headline,
+    b.angle,
+  ];
   return (
-    [b.visual_direction, b.body, b.headline]
+    candidates
       .map((v) => (typeof v === "string" ? v.trim() : ""))
       .find((v) => v.length > 0) ?? ""
   );
