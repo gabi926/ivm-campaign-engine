@@ -359,8 +359,28 @@ Output ONLY valid JSON. No markdown fences, no preamble. Schema (only include se
   }${
     hasAnyPaidSocial || hasOrganic
       ? `,
-  "video_concepts": [
-    { "hook": "first 3s verbatim", "hook_framework": "Pattern Interrupt | Bold Claim | Contrarian | Curiosity Gap | Callout | Social Proof Drop | Problem Agitation | Confession", "script": "[VISUAL]/[VO] cues, \\n line breaks", "duration": "15s|30s|60s", "style": "UGC|Talking Head|Animated|B-Roll|Demo|Testimonial", "platform_fit": "where + why" }
+  "video_concepts_short": [
+    {
+      "title": "3-6 word title",
+      "hook": "attention-grabbing opener line",
+      "script_compressed": "FULL 15-sec script in compressed form (hook + payoff, ONE clear beat — NO long form)",
+      "visual_direction": "what the camera shows; ONE clear subject",
+      "prompt": "Kling 3.0-optimized image-to-video prompt — MUST include explicit camera-motion verbs (dolly in | zoom punch | slow pan | crash zoom | orbit | whip pan), lighting cue (golden hour | harsh fluorescent | soft window | neon | overcast), mood, and a single clearly described subject. No multi-scene, no scene changes.",
+      "placement": "Meta Reels | TikTok | IG Stories | YouTube Shorts | Snap",
+      "duration_sec": 15
+    }
+  ],
+  "video_concepts_long": [
+    {
+      "title": "3-6 word title",
+      "hook": "attention-grabbing opener line",
+      "full_script": "full 30-45 sec script with [VISUAL] and [VO] blocks, \\n line breaks",
+      "visual_direction": "scene-by-scene visual brief",
+      "vo": "voiceover text separated out (just the words to be read)",
+      "placement": "YouTube Pre-roll | Connected TV | Long-form Reel | Sales Page Embed | LinkedIn Video",
+      "recommended_tool": "Veo 3.1 | HeyGen | Sora 2 | Runway Gen-4 | Human creator",
+      "duration_sec": 30
+    }
   ]`
       : ""
   }${
@@ -447,7 +467,18 @@ QUANTITIES:
 - copy_variations: 7 (varied across angles, leads, awareness)
 - cta_variations: 8 (varied frameworks)
 - image_concepts: 4 (if image-relevant channels selected)
-- video_concepts: 4 (if video-relevant channels selected)
+- video_concepts_short: EXACTLY 3 (15-sec one-click scroll-stoppers — Kling 3.0 image-to-video ready)
+- video_concepts_long: EXACTLY 3 (30-45 sec full narrative — blueprint only, no inline gen)
+
+VIDEO SPLIT RULES (CRITICAL):
+- Generate EXACTLY 3 short and EXACTLY 3 long concepts. Never combine into a single array.
+- Short concepts: hook-payoff structure, ONE beat, 15 seconds, designed for image-to-video models that max at 15s. The "prompt" field MUST be Kling 3.0-tuned (single subject, explicit camera-motion verb, lighting cue, mood). Avoid scene changes, multiple subjects, or long monologue.
+- Long concepts: full 30-45 sec narrative with [VISUAL]/[VO] blocks. Pick recommended_tool by script style:
+    · human-led UGC / testimonial / talking-head → "Human creator" or "HeyGen"
+    · cinematic narrative / story arcs → "Veo 3.1" or "Sora 2"
+    · product-focused / dynamic motion → "Runway Gen-4"
+  Pick duration_sec (30 | 35 | 45) by how much script content the concept needs.
+- DO NOT emit the legacy "video_concepts" field. It is deprecated.
 - search_ads: 5 (if Google selected)
 - programmatic_creative: 4 banner concepts + 3 native ads (if Programmatic selected)
 - email_sequence: 5 emails (if Email selected)

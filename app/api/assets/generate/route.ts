@@ -272,7 +272,10 @@ export async function POST(req: NextRequest) {
         duration,
       });
       requestId = submit.request_id;
-      stage1Meta = { raw_submit: submit.raw };
+      stage1Meta = {
+        raw_submit: submit.raw,
+        video_model: submit.model_label,
+      };
     }
 
     const { error: updErr } = await supabase

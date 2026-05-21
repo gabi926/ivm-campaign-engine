@@ -22,26 +22,58 @@ import type {
 // Defensive:   submit/poll bodies vary across model endpoints — every field is
 //              treated as optional and we fall back through multiple shapes.
 //
-// Model defaults (no user-facing picker, per spec):
+// Model defaults (no user-facing picker, per spec).
+//
+// v1.1: video models now prefer Kling 3.0 (unified multimodal, native audio +
+// lip sync, up to 15s). The REST endpoint path for Kling 3.0 isn't published
+// in Higgsfield's docs (which still list Kling v2.1 Pro and DoP). We use a
+// runtime fallback chain: try Kling 3.0 → Kling v2.1 Pro → DoP standard.
+// First successful submit wins; each fallback is logged.
+//
 //   image / text-to-image      → higgsfield-ai/soul/standard
 //   image / soul               → higgsfield-ai/soul/standard (+ image_url)
-//   video / image-to-video     → higgsfield-ai/dop/standard (needs image_url)
+//   video / image-to-video     → Kling 3.0 → Kling v2.1 Pro → DoP standard
 //   video / text-to-video      → INTERNAL two-stage chain in /status route:
 //                                stage 1: soul/standard (image)
-//                                stage 2: dop/standard (i2v on that image)
+//                                stage 2: same video fallback chain (i2v)
 //                                Single asset row; stage tracked in metadata.
 // ============================================================================
 
 export const HIGGSFIELD_API_BASE = "https://platform.higgsfield.ai";
 
+// Frozen primary model paths. The video field is a fallback chain.
 export const HIGGSFIELD_MODELS = Object.freeze({
   image: "higgsfield-ai/soul/standard",
   soul: "higgsfield-ai/soul/standard",
-  "image-to-video": "higgsfield-ai/dop/standard",
-  // text-to-video is a stage-chain; the status route swaps from soul→dop.
+  // Text-to-video stage-1 (image generation) reuses the soul model.
   "text-to-video-stage-1": "higgsfield-ai/soul/standard",
-  "text-to-video-stage-2": "higgsfield-ai/dop/standard",
 } as const);
+
+// Image-to-video / text-to-video stage-2 fallback chain.
+// Order: try Kling 3.0 first (best for 15-sec with audio), then documented
+// Kling v2.1 Pro, then DoP standard (5-sec ceiling) as a last resort.
+export const VIDEO_MODEL_FALLBACK: ReadonlyArray<{
+  path: string;
+  label: string;
+  /** True if this model accepts a `duration` body field. */
+  supportsDuration: boolean;
+}> = Object.freeze([
+  {
+    path: "higgsfield-ai/kling-3.0/standard",
+    label: "Kling 3.0",
+    supportsDuration: true,
+  },
+  {
+    path: "kling-video/v2.1/pro/image-to-video",
+    label: "Kling v2.1 Pro",
+    supportsDuration: false,
+  },
+  {
+    path: "higgsfield-ai/dop/standard",
+    label: "DoP standard",
+    supportsDuration: true,
+  },
+]);
 
 const TIMEOUT_SUBMIT_MS = 60_000;
 const TIMEOUT_POLL_MS = 30_000;
@@ -91,6 +123,17 @@ export class HiggsfieldError extends Error {
   }
 }
 
+// Patterns that mark a 403 as "out of credits" rather than a permission/auth
+// failure. Higgsfield's exact wording isn't documented; we match the well-known
+// variants conservatively (case-insensitive substring on the response body).
+const CREDIT_ERROR_NEEDLES = [
+  "not_enough_credits",
+  "insufficient_credits",
+  "not enough credits",
+  "insufficient credits",
+  "out of credits",
+];
+
 async function higgsfieldFetch(
   path: string,
   init: RequestInit,
@@ -113,11 +156,31 @@ async function higgsfieldFetch(
       signal: controller.signal,
     });
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       throw new HiggsfieldError(
         "Higgsfield auth failed — check HIGGSFIELD_API_KEY and HIGGSFIELD_SECRET.",
         "auth_failed",
-        res.status,
+        401,
+      );
+    }
+    if (res.status === 403) {
+      // Distinguish credit exhaustion from genuine auth/permission failures.
+      // Read the body once and inspect it — only throw insufficient_credits
+      // when the wording matches; otherwise treat as auth.
+      const bodyText = await res.text().catch(() => "");
+      const lower = bodyText.toLowerCase();
+      const isCreditError = CREDIT_ERROR_NEEDLES.some((n) => lower.includes(n));
+      if (isCreditError) {
+        throw new HiggsfieldError(
+          "Higgsfield account is out of credits. Top up at cloud.higgsfield.ai/billing.",
+          "insufficient_credits",
+          403,
+        );
+      }
+      throw new HiggsfieldError(
+        "Higgsfield rejected the request (403) — check HIGGSFIELD_API_KEY/SECRET and plan permissions.",
+        "auth_failed",
+        403,
       );
     }
     if (res.status === 404) {
@@ -210,22 +273,69 @@ export async function submitImageGeneration(
   return normalizeSubmit(json);
 }
 
+/**
+ * Submit an image-to-video generation, walking VIDEO_MODEL_FALLBACK in order.
+ * Each model is attempted once; on 404 ("not_found") we log a warning and try
+ * the next entry. All other errors (auth, credits, server, timeout, rate
+ * limit) abort the chain immediately — those are not "wrong endpoint"
+ * signals.
+ *
+ * The chosen model's label is returned in `model_label` so the caller can
+ * record it in `metadata` for debugging.
+ */
+export interface VideoSubmitResult extends NormalizedSubmit {
+  model_path: string;
+  model_label: string;
+}
+
 export async function submitVideoGeneration(
   params: VideoSubmitParams,
-): Promise<NormalizedSubmit> {
-  const body: Record<string, unknown> = {
-    image_url: params.image_url,
-    prompt: params.prompt,
-  };
-  if (typeof params.duration === "number") body.duration = params.duration;
+): Promise<VideoSubmitResult> {
+  let lastErr: HiggsfieldError | null = null;
 
-  const res = await higgsfieldFetch(
-    `/${HIGGSFIELD_MODELS["image-to-video"]}`,
-    { method: "POST", body: JSON.stringify(body) },
-    TIMEOUT_SUBMIT_MS,
+  for (const model of VIDEO_MODEL_FALLBACK) {
+    const body: Record<string, unknown> = {
+      image_url: params.image_url,
+      prompt: params.prompt,
+    };
+    if (typeof params.duration === "number" && model.supportsDuration) {
+      body.duration = params.duration;
+    }
+
+    try {
+      const res = await higgsfieldFetch(
+        `/${model.path}`,
+        { method: "POST", body: JSON.stringify(body) },
+        TIMEOUT_SUBMIT_MS,
+      );
+      const json = await parseJson<HiggsfieldSubmitResponse>(res);
+      const normalized = normalizeSubmit(json);
+      return {
+        ...normalized,
+        model_path: model.path,
+        model_label: model.label,
+      };
+    } catch (err) {
+      if (!(err instanceof HiggsfieldError)) throw err;
+      lastErr = err;
+      // Only "endpoint not found" triggers a fallback hop. Auth, credits,
+      // 5xx, 429, timeout — all fatal to the chain.
+      if (err.code !== "not_found") {
+        throw err;
+      }
+      console.warn(
+        `[higgsfield] ${model.label} (${model.path}) returned 404 — trying next fallback`,
+      );
+    }
+  }
+
+  throw (
+    lastErr ??
+    new HiggsfieldError(
+      "All Higgsfield video models returned 404",
+      "not_found",
+    )
   );
-  const json = await parseJson<HiggsfieldSubmitResponse>(res);
-  return normalizeSubmit(json);
 }
 
 function normalizeSubmit(json: HiggsfieldSubmitResponse): NormalizedSubmit {

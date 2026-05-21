@@ -10,7 +10,6 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/app/_lib/supabase/server";
 import type { CampaignOutput } from "@/app/_lib/campaign-types";
 import { CampaignReportView } from "@/app/components/CampaignReportView";
-import { GenerateAssetsButton } from "@/app/components/GenerateAssetsButton";
 
 export const dynamic = "force-dynamic";
 
@@ -65,14 +64,9 @@ export default async function CampaignDetailPage({
             campaignId={row.id}
             clientId={row.client_id}
           />
-          {Array.isArray(row.campaign_json.copy_variations) &&
-            row.campaign_json.copy_variations.length > 0 && (
-              <GenerateAssetsButton
-                campaignId={row.id}
-                clientId={row.client_id}
-                copyVariations={row.campaign_json.copy_variations}
-              />
-            )}
+          {/* v1.1: generate buttons live INSIDE CampaignReportView per
+              concept card. The bottom-of-page GenerateAssetsButton panel
+              has been removed (component file deleted). */}
         </div>
       </div>
     </div>

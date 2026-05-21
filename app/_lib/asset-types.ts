@@ -57,6 +57,8 @@ export interface AssetMetadata {
   aspect_ratio?: string;
   resolution?: string;
   duration_seconds?: number;
+  /** Which Higgsfield video model actually fired (after fallback walk). */
+  video_model?: string;
   raw_submit?: unknown;
   raw_status?: unknown;
   [k: string]: unknown;
@@ -140,10 +142,10 @@ export interface NormalizedSubmit {
   raw: HiggsfieldSubmitResponse;
 }
 
-// Ad block shape consumed by GenerateAssetsButton. Union of what
-// CopyVariation actually emits (headline, primary_text, angle) plus extras
-// we'd look for if the schema evolved. No index signature — the explicit
-// fields are sufficient and avoid CopyVariation TS2322 mismatches.
+// Ad block shape — legacy interface from Chunk B Lite's GenerateAssetsButton
+// (now deleted). Kept exported so external callers don't break, but the
+// inline-generate flow in v1.1 sources prompts directly from
+// image_concepts[].ai_prompt / video_concepts_short[].prompt.
 export interface AdBlockLike {
   headline?: string | null;
   primary_text?: string | null;

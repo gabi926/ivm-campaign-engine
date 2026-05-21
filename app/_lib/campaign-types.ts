@@ -37,6 +37,13 @@ export interface ImageConcept {
   scroll_stop_principle?: string;
   placement?: string;
 }
+/**
+ * @deprecated Replaced in v1.1 by `video_concepts_short` + `video_concepts_long`.
+ * Kept in the type so old saved rows fetched from `campaigns.campaign_json`
+ * still type-check; new generations no longer populate it. The renderer in
+ * CampaignReportView ignores this field on purpose — old campaigns surface
+ * empty video sections (intentional graceful break per Chunk B v1.1 spec).
+ */
 export interface VideoConcept {
   hook?: string;
   hook_framework?: string;
@@ -44,6 +51,45 @@ export interface VideoConcept {
   duration?: string;
   style?: string;
   platform_fit?: string;
+}
+
+/**
+ * 15-second one-click generation concept. Used by Kling 3.0 i2v via
+ * /api/assets/generate. `prompt` is Kling-tuned (camera-motion verbs,
+ * lighting, single clear subject).
+ */
+export interface VideoConceptShort {
+  title?: string;
+  hook?: string;
+  script_compressed?: string;
+  visual_direction?: string;
+  prompt?: string;
+  placement?: string;
+  duration_sec?: 15;
+}
+
+/**
+ * 30-45 second narrative concept. Blueprint-only — no inline generation
+ * (Higgsfield's video models don't ship at this length yet). UI renders a
+ * "Copy Prompt" CTA + a recommended_tool badge so the operator can hand the
+ * script to the right downstream tool.
+ */
+export type RecommendedTool =
+  | "Veo 3.1"
+  | "HeyGen"
+  | "Sora 2"
+  | "Runway Gen-4"
+  | "Human creator";
+
+export interface VideoConceptLong {
+  title?: string;
+  hook?: string;
+  full_script?: string;
+  visual_direction?: string;
+  vo?: string;
+  placement?: string;
+  recommended_tool?: RecommendedTool;
+  duration_sec?: 30 | 35 | 45;
 }
 export interface SearchAd {
   headline_1?: string;
@@ -207,7 +253,10 @@ export interface CampaignOutput {
   copy_variations?: CopyVariation[];
   cta_variations?: CTAVariation[];
   image_concepts?: ImageConcept[];
+  /** @deprecated Use `video_concepts_short` + `video_concepts_long`. */
   video_concepts?: VideoConcept[];
+  video_concepts_short?: VideoConceptShort[];
+  video_concepts_long?: VideoConceptLong[];
   search_ads?: SearchAd[];
   programmatic_creative?: ProgrammaticCreative;
   email_sequence?: EmailItem[];

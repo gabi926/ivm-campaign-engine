@@ -11,7 +11,7 @@
 //   clientName   — used by markdown export + PDF filename
 //   channels     — used by PDF route (for filename/heading)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -37,12 +37,14 @@ import {
   Zap,
 } from "lucide-react";
 import { GenerateBlueprintButton } from "@/app/components/GenerateBlueprintButton";
+import { InlineAssetGenerate } from "@/app/components/InlineAssetGenerate";
 import type {
   CampaignOutput,
   ComplianceNotes,
   LandingPageAudit,
   LpCategoryScore,
   TrackingInfrastructure,
+  VideoConceptLong,
 } from "../_lib/campaign-types";
 
 const ACCENT = "#d4ff3d";
@@ -317,20 +319,59 @@ function buildMarkdown(clientName: string, channels: string[], o: CampaignOutput
     hr();
   }
 
-  if (o.video_concepts?.length) {
-    push(`## Video Concepts`);
-    o.video_concepts.forEach((v, i) => {
+  // v1.1: video concepts split into short (one-click gen) + long (blueprint).
+  // Legacy `video_concepts` field is intentionally NOT exported to markdown —
+  // old saved campaigns surface an empty video section here on purpose.
+  if (o.video_concepts_short?.length) {
+    push(`## Short Video Concepts · 15s · Kling-ready`);
+    o.video_concepts_short.forEach((v, i) => {
       push();
-      push(`### Video ${String(i + 1).padStart(2, "0")} — ${v.style || "—"} · ${v.duration || "—"} [${v.hook_framework || "—"}]`);
+      push(`### Short ${String(i + 1).padStart(2, "0")} — ${v.title || "—"}`);
       if (v.hook) push(`**Hook:** "${v.hook}"`);
-      if (v.script) {
+      if (v.script_compressed) {
         push();
         push("**Script:**");
         push("```");
-        push(v.script);
+        push(v.script_compressed);
         push("```");
       }
-      if (v.platform_fit) push(`Platform fit: ${v.platform_fit}`);
+      if (v.visual_direction) push(`**Visual:** ${v.visual_direction}`);
+      if (v.prompt) {
+        push();
+        push("**Generation prompt (Kling 3.0):**");
+        push("```");
+        push(v.prompt);
+        push("```");
+      }
+      if (v.placement) push(`Placement: ${v.placement}`);
+    });
+    hr();
+  }
+  if (o.video_concepts_long?.length) {
+    push(`## Long Video Concepts · 30-45s · Blueprint Only`);
+    o.video_concepts_long.forEach((v, i) => {
+      push();
+      push(
+        `### Long ${String(i + 1).padStart(2, "0")} — ${v.title || "—"} · ${v.duration_sec ?? "—"}s` +
+          (v.recommended_tool ? ` · ${v.recommended_tool}` : ""),
+      );
+      if (v.hook) push(`**Hook:** "${v.hook}"`);
+      if (v.full_script) {
+        push();
+        push("**Full script:**");
+        push("```");
+        push(v.full_script);
+        push("```");
+      }
+      if (v.visual_direction) push(`**Visual:** ${v.visual_direction}`);
+      if (v.vo) {
+        push();
+        push("**VO:**");
+        push("```");
+        push(v.vo);
+        push("```");
+      }
+      if (v.placement) push(`Placement: ${v.placement}`);
     });
     hr();
   }
@@ -446,15 +487,41 @@ function fmtImages(o: CampaignOutput): string {
   );
 }
 
-function fmtVideos(o: CampaignOutput): string {
+function fmtVideosShort(o: CampaignOutput): string {
   return (
-    o.video_concepts
+    o.video_concepts_short
       ?.map(
         (v, i) =>
-          `${i + 1}. ${v.style} , ${v.duration} [${v.hook_framework}]\nHOOK: ${v.hook}\nSCRIPT:\n${v.script}\nFit: ${v.platform_fit}`,
+          `${i + 1}. ${v.title ?? "—"} · 15s\nHOOK: ${v.hook ?? ""}\nSCRIPT (compressed):\n${v.script_compressed ?? ""}\nVISUAL: ${v.visual_direction ?? ""}\nKLING PROMPT:\n${v.prompt ?? ""}\nPlacement: ${v.placement ?? ""}`,
       )
       .join("\n\n---\n\n") || ""
   );
+}
+
+function fmtVideosLong(o: CampaignOutput): string {
+  return (
+    o.video_concepts_long
+      ?.map(
+        (v, i) =>
+          `${i + 1}. ${v.title ?? "—"} · ${v.duration_sec ?? "—"}s · Tool: ${v.recommended_tool ?? "—"}\nHOOK: ${v.hook ?? ""}\nFULL SCRIPT:\n${v.full_script ?? ""}\nVISUAL: ${v.visual_direction ?? ""}\nVO:\n${v.vo ?? ""}\nPlacement: ${v.placement ?? ""}`,
+      )
+      .join("\n\n---\n\n") || ""
+  );
+}
+
+// Builds the "Copy Prompt" payload for a long video card — operator hands
+// this to Veo/HeyGen/Sora/Runway/a human editor.
+function fmtLongVideoPrompt(v: VideoConceptLong): string {
+  const lines: string[] = [];
+  if (v.title) lines.push(`TITLE: ${v.title}`);
+  if (v.duration_sec) lines.push(`DURATION: ${v.duration_sec}s`);
+  if (v.recommended_tool) lines.push(`RECOMMENDED TOOL: ${v.recommended_tool}`);
+  if (v.placement) lines.push(`PLACEMENT: ${v.placement}`);
+  if (v.hook) lines.push(`\nHOOK: ${v.hook}`);
+  if (v.full_script) lines.push(`\nFULL SCRIPT:\n${v.full_script}`);
+  if (v.visual_direction) lines.push(`\nVISUAL DIRECTION:\n${v.visual_direction}`);
+  if (v.vo) lines.push(`\nVO:\n${v.vo}`);
+  return lines.join("\n");
 }
 
 function fmtLP(o: CampaignOutput): string {
@@ -634,6 +701,107 @@ function Section({
       </div>
       {children}
     </section>
+  );
+}
+
+// Pulls `--ar W:H` out of a Midjourney-style prompt so we can default the
+// InlineAssetGenerate aspect-ratio dropdown to whatever the AI suggested.
+// Returns null when the prompt has no --ar, when the value is malformed, or
+// when the prompt itself is missing.
+function extractAspectRatio(prompt?: string | null): string | null {
+  if (!prompt) return null;
+  const m = prompt.match(/--ar\s+(\d{1,2}):(\d{1,2})/i);
+  if (!m) return null;
+  return `${m[1]}:${m[2]}`;
+}
+
+// Long-video card. Owns its "copied" toast state so each card flashes
+// independently. The card itself stays blueprint-only — no generation CTA.
+function LongVideoCard({
+  index,
+  v,
+  copiedKey,
+  onCopy,
+}: {
+  index: number;
+  v: VideoConceptLong;
+  copiedKey: string;
+  onCopy: (payload: string, key: string) => void;
+}) {
+  const cardKey = `vid-l-${index}`;
+  const payload = fmtLongVideoPrompt(v);
+  return (
+    <div className="border border-stone-200 bg-white card-shadow p-5">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">
+            Long {String(index + 1).padStart(2, "0")}
+          </span>
+          <span className="accent-chip font-mono-x text-[10px] uppercase tracking-widest">
+            {v.title}
+          </span>
+          <span className="meta-chip">{(v.duration_sec ?? "—")}s</span>
+          {v.recommended_tool && (
+            <span
+              className="font-mono-x text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 border"
+              style={{ backgroundColor: ACCENT, borderColor: "#a3cc1f", color: "#0a0a0a" }}
+              title="Recommended tool"
+            >
+              {v.recommended_tool}
+            </span>
+          )}
+          {v.placement && <span className="meta-chip">{v.placement}</span>}
+        </div>
+      </div>
+      {v.hook && (
+        <div className="mb-4 pb-4 border-b border-stone-200">
+          <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">
+            Hook · 0-3s
+          </div>
+          <p className="font-display text-lg font-bold italic leading-snug">
+            &ldquo;{v.hook}&rdquo;
+          </p>
+        </div>
+      )}
+      {v.full_script && (
+        <div className="mb-3">
+          <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">
+            Full script
+          </div>
+          <pre className="font-mono-x text-xs text-stone-700 leading-relaxed whitespace-pre-wrap break-words">
+            {v.full_script}
+          </pre>
+        </div>
+      )}
+      {v.visual_direction && (
+        <div className="mb-3 font-mono-x text-[10px] text-stone-400 uppercase tracking-wider">
+          Visual: <span className="text-stone-700 normal-case tracking-normal">{v.visual_direction}</span>
+        </div>
+      )}
+      {v.vo && (
+        <div className="mb-3">
+          <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">VO</div>
+          <pre className="font-mono-x text-xs text-stone-700 leading-relaxed whitespace-pre-wrap break-words">
+            {v.vo}
+          </pre>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-3 flex-wrap">
+        <button
+          onClick={() => onCopy(payload, cardKey)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 border border-stone-900 bg-white font-mono-x text-[10px] uppercase tracking-widest font-bold text-stone-900 hover:bg-stone-900 hover:text-white transition"
+        >
+          {copiedKey === cardKey ? <Check size={14} /> : <ClipboardCopy size={14} />}
+          {copiedKey === cardKey ? "Prompt copied" : "Copy Prompt"}
+        </button>
+        {v.recommended_tool && (
+          <span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">
+            Hand to {v.recommended_tool}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -956,6 +1124,27 @@ export function CampaignReportView({
   const [pdfError, setPdfError] = useState("");
   const [markdownCopied, setMarkdownCopied] = useState(false);
   const [markdownCopying, setMarkdownCopying] = useState(false);
+
+  // v1.1 graceful break: surface a one-line console warning when an old
+  // saved campaign has the deprecated `video_concepts` field but no new
+  // short/long arrays. The UI intentionally renders no video sections in
+  // that case — operator regenerates to upgrade.
+  useEffect(() => {
+    const hasLegacy =
+      Array.isArray(output.video_concepts) && output.video_concepts.length > 0;
+    const hasNew =
+      (Array.isArray(output.video_concepts_short) &&
+        output.video_concepts_short.length > 0) ||
+      (Array.isArray(output.video_concepts_long) &&
+        output.video_concepts_long.length > 0);
+    if (hasLegacy && !hasNew) {
+      console.warn(
+        "[CampaignReportView] Legacy `video_concepts` field detected on a saved campaign. " +
+          "Video sections are intentionally hidden — regenerate the campaign to get the " +
+          "new short/long split with inline Kling generation.",
+      );
+    }
+  }, [output]);
 
   const handleCopy = async (text: string, key: string) => {
     try {
@@ -1396,7 +1585,7 @@ export function CampaignReportView({
           </Section>
         )}
 
-        {/* 12 Image Concepts */}
+        {/* 12 Image Concepts — with inline Generate Image inside each card */}
         {output.image_concepts && output.image_concepts.length > 0 && (
           <Section number="12" icon={<ImageIcon size={18} />} title="Image Concepts" subtitle={`${output.image_concepts.length} · scroll-stop tested`} onCopyAll={() => handleCopy(fmtImages(output), "img-all")} copiedAll={copiedKey === "img-all"}>
             <div className="space-y-4">
@@ -1419,46 +1608,102 @@ export function CampaignReportView({
                     <p className="font-mono-x text-xs text-stone-700 leading-relaxed">{img.ai_prompt}</p>
                   </div>
                   <div className="font-mono-x text-[10px] text-stone-400 uppercase tracking-wider">Placement: <span className="text-stone-700 normal-case tracking-normal">{img.placement}</span></div>
+
+                  <InlineAssetGenerate
+                    campaignId={campaignId}
+                    clientId={clientId}
+                    adBlockIndex={i}
+                    assetType="image"
+                    initialMode="text-to-image"
+                    initialPrompt={img.ai_prompt ?? img.concept ?? ""}
+                    defaultAspectRatio={extractAspectRatio(img.ai_prompt) ?? "1:1"}
+                  />
                 </div>
               ))}
             </div>
           </Section>
         )}
 
-        {/* 13 Video Concepts */}
-        {output.video_concepts && output.video_concepts.length > 0 && (
-          <Section number="13" icon={<Video size={18} />} title="Video Concepts" subtitle={`${output.video_concepts.length} · hook-framework tagged`} onCopyAll={() => handleCopy(fmtVideos(output), "vid-all")} copiedAll={copiedKey === "vid-all"}>
+        {/* 13a Short Video Concepts — one-click Kling 3.0 generation */}
+        {output.video_concepts_short && output.video_concepts_short.length > 0 && (
+          <Section number="13" icon={<Video size={18} />} title="Short Video Concepts" subtitle={`${output.video_concepts_short.length} · 15s · Kling-ready · one-click`} onCopyAll={() => handleCopy(fmtVideosShort(output), "vid-s-all")} copiedAll={copiedKey === "vid-s-all"}>
             <div className="space-y-4">
-              {output.video_concepts.map((v, i) => (
+              {output.video_concepts_short.map((v, i) => (
                 <div key={i} className="border border-stone-200 bg-white card-shadow p-5">
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">Video {String(i + 1).padStart(2, "0")}</span>
-                      <span className="accent-chip font-mono-x text-[10px] uppercase tracking-widest">{v.style}</span>
-                      <span className="meta-chip">{v.duration}</span>
-                      {v.hook_framework && <span className="meta-chip">{v.hook_framework}</span>}
+                      <span className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500">Short {String(i + 1).padStart(2, "0")}</span>
+                      <span className="accent-chip font-mono-x text-[10px] uppercase tracking-widest">{v.title}</span>
+                      <span className="meta-chip">{(v.duration_sec ?? 15)}s</span>
+                      {v.placement && <span className="meta-chip">{v.placement}</span>}
                     </div>
-                    <button onClick={() => handleCopy(`HOOK: ${v.hook}\n\nSCRIPT:\n${v.script}\n\nDuration: ${v.duration} | Style: ${v.style}`, `vid-${i}`)} className="text-stone-400 hover-dark">
-                      {copiedKey === `vid-${i}` ? <Check size={14} /> : <Copy size={14} />}
+                    <button onClick={() => handleCopy(`HOOK: ${v.hook}\n\nSCRIPT:\n${v.script_compressed}\n\nKLING PROMPT:\n${v.prompt}`, `vid-s-${i}`)} className="text-stone-400 hover-dark">
+                      {copiedKey === `vid-s-${i}` ? <Check size={14} /> : <Copy size={14} />}
                     </button>
                   </div>
-                  <div className="mb-4 pb-4 border-b border-stone-200">
-                    <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">Hook · 0-3s</div>
-                    <p className="font-display text-lg font-bold italic leading-snug">&ldquo;{v.hook}&rdquo;</p>
-                  </div>
-                  <div className="mb-3">
-                    <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">Script</div>
-                    <pre className="font-mono-x text-xs text-stone-700 leading-relaxed whitespace-pre-wrap break-words">{v.script}</pre>
-                  </div>
-                  {v.platform_fit && <div className="font-mono-x text-[10px] text-stone-400 uppercase tracking-wider pt-3 border-t border-stone-200">Platform fit: <span className="text-stone-700 normal-case tracking-normal">{v.platform_fit}</span></div>}
+                  {v.hook && (
+                    <div className="mb-4 pb-4 border-b border-stone-200">
+                      <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">Hook · 0-3s</div>
+                      <p className="font-display text-lg font-bold italic leading-snug">&ldquo;{v.hook}&rdquo;</p>
+                    </div>
+                  )}
+                  {v.script_compressed && (
+                    <div className="mb-3">
+                      <div className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-2">Compressed script</div>
+                      <pre className="font-mono-x text-xs text-stone-700 leading-relaxed whitespace-pre-wrap break-words">{v.script_compressed}</pre>
+                    </div>
+                  )}
+                  {v.visual_direction && (
+                    <div className="mb-3 font-mono-x text-[10px] text-stone-400 uppercase tracking-wider">Visual: <span className="text-stone-700 normal-case tracking-normal">{v.visual_direction}</span></div>
+                  )}
+                  {v.prompt && (
+                    <div className="bg-stone-100 border border-stone-200 p-3 mb-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="accent-chip font-mono-x text-[10px] uppercase tracking-widest">Kling Prompt</span>
+                      </div>
+                      <p className="font-mono-x text-xs text-stone-700 leading-relaxed">{v.prompt}</p>
+                    </div>
+                  )}
+
+                  <InlineAssetGenerate
+                    campaignId={campaignId}
+                    clientId={clientId}
+                    adBlockIndex={i}
+                    assetType="video"
+                    initialMode="text-to-video"
+                    initialPrompt={v.prompt ?? v.script_compressed ?? v.visual_direction ?? ""}
+                    defaultAspectRatio="9:16"
+                    defaultDuration={15}
+                  />
                 </div>
               ))}
             </div>
           </Section>
         )}
 
+        {/* 13b Long Video Concepts — blueprint only; "Copy Prompt" + recommended tool */}
+        {output.video_concepts_long && output.video_concepts_long.length > 0 && (
+          <Section number="14" icon={<Video size={18} />} title="Long Video Concepts" subtitle={`${output.video_concepts_long.length} · 30-45s · blueprint only`} onCopyAll={() => handleCopy(fmtVideosLong(output), "vid-l-all")} copiedAll={copiedKey === "vid-l-all"}>
+            <div className="space-y-4">
+              {output.video_concepts_long.map((v, i) => (
+                <LongVideoCard
+                  key={i}
+                  index={i}
+                  v={v}
+                  copiedKey={copiedKey}
+                  onCopy={(payload, key) => handleCopy(payload, key)}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Legacy single-array `video_concepts` is intentionally NOT rendered.
+            Old saved campaigns surface empty video sections — graceful break
+            per Chunk B v1.1 spec; operator regenerates to upgrade. */}
+
         {/* 14 Form */}
-        <Section number="14" icon={<ListChecks size={18} />} title="Form Build" subtitle="Fields + qualifying questions">
+        <Section number="15" icon={<ListChecks size={18} />} title="Form Build" subtitle="Fields + qualifying questions">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h4 className="font-mono-x text-[10px] uppercase tracking-widest text-stone-500 mb-3">Fields</h4>
@@ -1489,7 +1734,7 @@ export function CampaignReportView({
         </Section>
 
         {/* 15 LP Structure */}
-        <Section number="15" icon={<Layout size={18} />} title="Landing Page Structure" subtitle={`${output.landing_page_structure?.length || 0} sections · Big Idea anchored`} onCopyAll={() => handleCopy(fmtLP(output), "lp-all")} copiedAll={copiedKey === "lp-all"}>
+        <Section number="16" icon={<Layout size={18} />} title="Landing Page Structure" subtitle={`${output.landing_page_structure?.length || 0} sections · Big Idea anchored`} onCopyAll={() => handleCopy(fmtLP(output), "lp-all")} copiedAll={copiedKey === "lp-all"}>
           <div className="space-y-3">
             {output.landing_page_structure?.map((s, i) => (
               <div key={i} className="border-l-4 pl-5 py-2" style={{ borderColor: ACCENT }}>
@@ -1506,7 +1751,7 @@ export function CampaignReportView({
 
         {/* 16 Weakness Audit */}
         {output.weakness_audit && output.weakness_audit.length > 0 && (
-          <Section number="16" icon={<Target size={18} />} title="Weakness Audit" subtitle="3 weakest assets · self-critique · fixes" onCopyAll={() => handleCopy(fmtAudit(output), "aud-all")} copiedAll={copiedKey === "aud-all"}>
+          <Section number="17" icon={<Target size={18} />} title="Weakness Audit" subtitle="3 weakest assets · self-critique · fixes" onCopyAll={() => handleCopy(fmtAudit(output), "aud-all")} copiedAll={copiedKey === "aud-all"}>
             <div className="border-2 border-stone-900 bg-white card-shadow p-1">
               <div className="bg-stone-900 text-stone-100 px-4 py-2 mb-1">
                 <span className="font-mono-x text-[10px] uppercase tracking-widest">⚡ Brutal honesty , patch before launch</span>

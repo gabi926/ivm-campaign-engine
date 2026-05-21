@@ -268,6 +268,7 @@ export async function GET(
       intermediate_image_url: intermediate.storage_url,
       intermediate_storage_path: intermediate.storage_path,
       raw_submit: videoSubmit.raw,
+      video_model: videoSubmit.model_label,
     };
 
     const { data: updated } = await supabase
