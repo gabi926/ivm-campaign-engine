@@ -267,4 +267,18 @@ export interface CampaignOutput {
   landing_page_structure?: LandingPageSection[];
   compliance_notes?: ComplianceNotes;
   weakness_audit?: WeaknessAuditItem[];
+  /**
+   * Chunk B v1.2 — id of the row this campaign was auto-persisted to.
+   * Plumbed back to the fresh-generation page so InlineAssetGenerate
+   * can render inline buttons on first render (vs requiring a
+   * save-and-reopen). Omitted when the auto-save failed or when the
+   * request came from a context with no signed-in user.
+   */
+  campaign_id?: string;
+  /**
+   * Chunk B v1.2 — set when the auto-save attempt errored. The UI shows
+   * a small banner explaining inline buttons are unavailable until the
+   * campaign is saved (re-generate or refresh).
+   */
+  save_error?: string;
 }

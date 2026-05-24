@@ -1104,10 +1104,11 @@ interface CampaignReportViewProps {
   output: CampaignOutput;
   clientName: string;
   channels: string[];
-  // Present on the saved-campaign detail view so the LP-blueprint CTA can
-  // link back to the source campaign. Omitted on the fresh-generation home
-  // page (no persisted id surfaced client-side) so the CTA renders there
-  // once the campaign is opened from history.
+  // Present on the saved-campaign detail view AND on the fresh-generation
+  // home page (Chunk B v1.2 — /api/generate returns the inserted row id
+  // and app/page.tsx plumbs it as campaignId). Drives InlineAssetGenerate
+  // rendering — undefined means the campaign wasn't persisted yet (e.g.
+  // auto-save failed) and the inline buttons stay hidden.
   campaignId?: string;
   clientId?: string | null;
 }

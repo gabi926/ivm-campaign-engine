@@ -341,7 +341,20 @@ export default function IVMCampaignEngine() {
           )}
 
           {/* Output */}
-          {output && <CampaignReportView output={output} clientName={inputs.clientName} channels={inputs.channels} />}
+          {output && output.save_error && (
+            <div className="mb-6 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Save failed — generate buttons unavailable until campaign is saved.
+              Try refreshing or re-generating. (Reason: {output.save_error})
+            </div>
+          )}
+          {output && (
+            <CampaignReportView
+              output={output}
+              clientName={inputs.clientName}
+              channels={inputs.channels}
+              campaignId={output.campaign_id}
+            />
+          )}
 
           {!output && !generating && (
             <div className="mt-16 text-center py-12 border border-dashed border-stone-300 bg-white/50">
