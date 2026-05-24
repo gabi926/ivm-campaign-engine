@@ -683,32 +683,59 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Persist to campaigns for portal history. Fire-and-forget — a save
-  // failure must not break the generation response. The proxy already
-  // verified the session, so getUser() should return a user; if it doesn't
-  // (race or misconfig) we skip silently.
+  // Persist to campaigns for portal history. Chunk B v1.2 — we now
+  // capture the inserted row's id and plumb it back through the response
+  // so the fresh-generation page can render InlineAssetGenerate buttons
+  // inline (instead of requiring save-and-reopen). A save failure no
+  // longer silently degrades the UX — we surface it via save_error.
+  let savedCampaignId: string | undefined;
+  let saveError: string | undefined;
   try {
     const user = await getUser();
     if (user) {
       const supabase = await createSupabaseClient();
-      await supabase.from("campaigns").insert({
-        user_id: user.id,
-        client_id: inputs.clientId,
-        brand_name: inputs.clientName,
-        website: inputs.website,
-        offer: inputs.offer,
-        primary_cta: inputs.cta,
-        target_audience: inputs.audience,
-        brand_voice: inputs.voice,
-        competitors: inputs.competitors,
-        channels: inputs.channels,
-        campaign_json: parsed,
-        status: "completed",
-      });
+      const { data: inserted, error: insertError } = await supabase
+        .from("campaigns")
+        .insert({
+          user_id: user.id,
+          client_id: inputs.clientId,
+          brand_name: inputs.clientName,
+          website: inputs.website,
+          offer: inputs.offer,
+          primary_cta: inputs.cta,
+          target_audience: inputs.audience,
+          brand_voice: inputs.voice,
+          competitors: inputs.competitors,
+          channels: inputs.channels,
+          campaign_json: parsed,
+          status: "completed",
+        })
+        .select("id")
+        .single();
+      if (insertError) {
+        console.warn("[campaign] campaigns insert failed; continuing:", insertError);
+        saveError = insertError.message;
+      } else if (inserted?.id) {
+        savedCampaignId = inserted.id as string;
+      }
     }
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     console.warn("[campaign] campaigns insert failed; continuing:", e);
+    saveError = msg;
   }
 
-  return NextResponse.json(parsed, { status: 200 });
+  // `parsed` is typed `unknown` (Claude's JSON output). Narrow to an
+  // object-shape so the spread is typesafe. We've already passed it
+  // through the parse/repair flow above; if it isn't an object the
+  // upstream return-early branch would have triggered.
+  const parsedObj = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
+  return NextResponse.json(
+    {
+      ...parsedObj,
+      ...(savedCampaignId ? { campaign_id: savedCampaignId } : {}),
+      ...(saveError ? { save_error: saveError } : {}),
+    },
+    { status: 200 },
+  );
 }
