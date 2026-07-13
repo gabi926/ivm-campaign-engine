@@ -11,7 +11,8 @@
 // detail page — this v1 form only surfaces client attach.
 
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, FileText, Loader2, Wand2, X } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, FileText, History, Loader2, Wand2, X } from "lucide-react";
 import { ClientSelector, type ClientOption } from "@/app/components/ClientSelector";
 import { extractFileText, type FileExtractionResult } from "./file-parser";
 import { AudienceSpecView } from "./AudienceSpecView";
@@ -183,8 +184,17 @@ export function AudienceBuilderClient() {
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <header className="space-y-3">
-        <div className="font-mono-x text-[11px] uppercase tracking-widest text-stone-500 font-bold">
-          Revenue Engine · Audience Builder
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="font-mono-x text-[11px] uppercase tracking-widest text-stone-500 font-bold">
+            Revenue Engine · Audience Builder
+          </div>
+          <Link
+            href="/audiences/history"
+            className="inline-flex items-center gap-1.5 font-mono-x text-[10px] uppercase tracking-widest text-stone-600 border border-stone-300 bg-white px-2.5 py-1.5 hover:border-stone-500 hover-dark transition"
+          >
+            <History size={12} />
+            History
+          </Link>
         </div>
         <h1 className="font-display text-4xl md:text-5xl font-black leading-tight text-stone-900">
           Build an AL Audience{" "}
